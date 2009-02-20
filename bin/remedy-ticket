@@ -1,0 +1,401 @@
+#!/usr/bin/perl -T
+# Copyright and license are in the documentation below.
+
+##############################################################################
+### Configuration
+##############################################################################
+
+## Modify and uncomment this to use user code instead of just system-wide
+## modules, or to use development versions.
+# use lib '/FULL/PATH/TO/PERL/MODULES';
+use lib "/afs/ir/users/t/s/tskirvin/work/remedy/Stanford-Remedy/lib";   # not ideal
+use lib "/afs/ir/users/t/s/tskirvin/work/libremedy-perl/lib";
+
+## Number of days to go back for the 'unresolved' search. 
+our $DAYS = 0;
+
+## Print debugging information?  Set with '--debug', can be set many times
+our $DEBUG = 4;
+
+## Default group information.  Related to, but not set by, '--group'.
+our $DEFAULT_GROUP = '';
+
+## Default user information.  Related to, but not set by, '--user'.
+our $DEFAULT_USER = $ENV{'REMOTE_USER'} || $ENV{'USER'} || "unknown";
+
+## Default request type, for convenience
+our %DEFAULT = (
+    'ticket' => 'summary',
+    'list'   => 'assign',
+);
+
+## Tag to include include in the common log file
+our $LOG_TAG = "REMEDY-TKT";
+
+## Default ticket status for searching.
+our $STATUS = 'open';
+
+## In the 'time' functions, default number of minutes spent.
+our $TIME = 0;
+
+##############################################################################
+### Declarations
+##############################################################################
+
+use strict;
+use warnings;
+
+use Getopt::Long;
+use Pod::Usage;
+use Remedy::Ticket;
+
+$0 =~ s%.*/%%g;     # Lose the annoying path information
+$|++;               # Flush output
+
+use vars qw/$USER $GROUP/;
+
+##############################################################################
+### main ()
+##############################################################################
+
+my $logger = Remedy::Log->get_logger;
+
+my $parser = new Getopt::Long::Parser;
+my $result = $parser->getoptions (
+    'time=s'        => \$TIME,
+    'days=s'        => \$DAYS,
+    'user=s'        => \$USER,
+    'group=s'       => \$GROUP,
+    'status=s'      => \$STATUS,
+    'd|debug+'      => \$DEBUG,
+    'man'           => sub { pod2usage (-verbose => 2, -noperldoc => 1) },
+    'h|help'        => sub { pod2usage (-verbose => 1) }) || error_usage ();
+
+map { untaint ($_) } $TIME, $DAYS, $USER, $GROUP, $STATUS;
+
+my $remedy = eval { Remedy::Ticket->connect ('debug' => $DEBUG) }
+    or $logger->logdie ("couldn't connect to database: $@");
+$logger->logdie ($@) if $@;
+
+my ($query, @rest) = @ARGV;
+$query ||= '(none)';
+$query = lc $query;
+
+if      ($query eq 'ticket') { 
+    my ($number, $type) = @rest;
+    $type ||= $DEFAULT{lc $query};
+    $logger->info ("text ($number, $type)");
+    print scalar $remedy->text ($number, $type);
+    exit 0;
+
+} elsif ($query eq 'assign') {  # not yet working
+    my ($number) = @rest;
+
+    my %args;
+    $args{'user'}  = $USER  if $USER;
+    $args{'group'} = $GROUP if defined $GROUP;
+
+    if (my $return = $remedy->assign ($number, %args)) {
+        print "successfuly assigned $number\n";
+        print scalar $remedy->text ($number, 'assign');
+        exit 0;
+    } else {
+        print "failed to assign $number\n";
+    }
+
+} elsif ($query eq 'status') {
+     my ($number, $status) = @rest;
+    
+    $logger->info ("setting status of $number to '$status'");
+    if (my $error = $remedy->set_status ($number, $status)) {
+        print "failed to set status of $number to $status: $error\n";
+        exit 1;
+    } else {
+        print scalar $remedy->text ($number, 'default');
+        exit 0;
+    }
+
+} elsif ($query eq 'list') { 
+    my ($type, $user, @extra) = @rest;
+    $type ||= $DEFAULT{$query};
+    $type = lc $type;
+
+    my (%hash, @text);
+
+    $user ||= $USER || $DEFAULT_USER;
+
+    $hash{'user'}   = $USER   if defined $USER;
+    $hash{'group'}  = $GROUP  if defined $GROUP;
+    $hash{'status'} = $STATUS if defined $STATUS;
+
+    if      ($type eq 'all') {
+        
+    } elsif ($type eq 'assign') {
+        $hash{'assigned_user'} = $user;
+        push @text, "assigned to '$user'";
+        $user = '';
+
+    } elsif ($type eq 'submit') {
+        $hash{'submitted_user'} = $user;
+        $user = '';
+        push @text, "submitted by '$user'";
+
+    } elsif ($type eq 'unassigned') { 
+        $hash{'unassigned'}++;
+        push @text, "unassigned tickets";
+        
+        if ($USER) {
+            $hash{'submitted_user'} = $USER;
+            push @text, "submitted by '$USER'";
+        }
+
+    } elsif ($type eq 'unresolved') { 
+        $hash{'status'} = 'open';
+        push @text, "open tickets";
+
+    } else { error_usage ("invalid list type: '$type'") }
+
+    if ($DAYS) {
+        $hash{'last_modify_before'} = time - $DAYS * 86400;
+        push @text, "unmodified for $DAYS days";
+    }
+
+    if ($USER) { 
+        my %person_search = ('SUNET ID' => $user);
+        my @return = $remedy->read ('people', %person_search);
+        $logger->logdie ("user '$user' does not belong to any groups")
+            unless scalar @return;
+        my @groups;
+        foreach (@return) { push @groups, $_->group }
+
+        if (scalar @groups) {
+            push @text, "in all member groups of '$user'";
+            $hash{'groups'} = \@groups;
+        }
+    }
+
+    $logger->info (sprintf ("finding %s", join (", ", @text)));
+    foreach my $tkt ($remedy->read ('ticket', %hash)) { 
+        print scalar $tkt->summary_text;
+    }
+    exit 0;
+
+
+
+
+
+} elsif (lc $query eq 'time_spent') { 
+    my ($inc, $minutes) = @rest;
+    my $tkt = get_ticket ($remedy, $inc) || error ("no ticket");
+
+    $logger->info ("Adding timelog information to ticket " . $tkt->inc_num);
+
+    # $tkt->time_spent ($minutes)
+    my $timelog = $tkt->timelog_create ();
+    $timelog->time_spent ($minutes);
+    $timelog->submitter ($USER || $DEFAULT_USER);
+
+    # ...then add it to the main tkt entry as well
+
+    print scalar $timelog->print_text;
+    if (eval { my $ret = $timelog ->save }) {
+        print "Timelog entry " . $timelog->id . " saved\n";        
+        exit 0;
+    } else {
+        error ("Error saving timelog entry: $@");
+    }
+
+
+
+
+} elsif (lc $query eq 'worklog') { 
+    my ($inc, $text) = @rest;
+    my $incnum = $remedy->parse_incident_number ($inc)
+        or pod2usage (-verbose => 1, "Invalid ticket number: $inc");
+    pod2usage (-verbose => 1) unless defined $incnum;
+
+    $logger->info ("Adding worklog information to ticket $incnum");
+    my $tkt = $remedy->incident ($incnum)
+        or $remedy->die_error ("Couldn't load $incnum", $remedy->error);
+
+    my $worklog = $tkt->worklog_create ();
+
+    # all of this data needs a bit of work, but it's reasonably accurate
+    $worklog->details ($text);
+    $worklog->submitter ($USER || $DEFAULT_USER);
+    $worklog->description ("submitted through script '$0'");
+    $worklog->type ('General Information');     # probably ought to come from something else
+
+    $worklog->time_spent ($TIME); 
+    # care about 'time' (3)?
+
+    print scalar $worklog->print_text;
+    if (eval { my $ret = $worklog->save }) {
+        print "Worklog entry " . $worklog->id . " saved\n";        
+        exit 0;
+    } else {
+        error ("error saving worklog entry: $@");
+    }
+
+} elsif (lc $query eq 'help') {
+    pod2usage (-verbose => 2, -exit_status => 0, -noperldoc => 1);
+
+} else { error_usage ("invalid query type: '$query'") }
+
+exit 0;
+
+##############################################################################
+### Subroutines 
+##############################################################################
+
+sub error_usage { 
+    my ($error) = @_;
+    my $logger = Remedy::Log->get_logger ();
+    $logger->error ($error);
+    pod2usage (-exit_status => 2, -verbose => 1);
+}
+
+sub get_ticket {
+    my ($remedy, $number) = @_;
+    my $logger = $remedy->logger_or_die ('no logger when getting ticket');
+    $logger->info ("getting ticket '$number'");
+    my $tkt = eval { $remedy->get ($number) };
+    $logger->logdie ("error loading '$number': $@") if $@ || !$tkt;
+    return $tkt;
+}
+
+### untaint (TEXT, MATCH)
+# Untaint user-offered data that is "safe enough", or die if it's not.
+sub untaint {
+    my ($text, $match) = @_;
+    $match ||= '[a-zA-Z0-9_./: \-+=]*';
+    return '' unless defined $text;
+    if ($text =~ m%^($match)$%) { return $1 } 
+    else                        { die ("tainted data: '$text' ($match)\n") }
+}
+
+##############################################################################
+### Documentation
+##############################################################################
+
+=head1 NAME
+
+remedy-ticket - manage remedy tickets
+
+=head1 SYNOPSIS
+
+B<remctl tools remedy ticket> ticket I<NUMBER>
+
+B<remctl tools remedy ticket> list I<TYPE> I<ARGS>
+
+B<remctl tools remedy ticket> [...]
+
+=head1 DESCRIPTION
+
+remedy-ticket queries the Remedy database for information on a given ticket 
+(as refrenced with C<INCIDENT_NUMBER> and creates a human-parsable report 
+containing all relevant information, including worklog information.  It is 
+designed to be used through a remctl interface for the Unix Systems team.
+
+=head1 OPTIONS
+
+=over 4
+
+=item B<-h>, B<--help>
+
+Prints out the synopsis information and exits.
+
+=item B<-v>, B<--version>
+
+Prints out the version information and exits.
+
+=back
+
+=head1 EXAMPLES
+
+There are three basic modes of operation:
+
+=over 4
+
+=item remedy-ticket INC000000804714
+
+=item remedy-ticket INC000000804714 base
+
+Prints basic information about the ticket, the requestor, who it has been
+assigned to, resolution information, and a summary of the associated work
+log entries.  Returns results that look something like this (but longer):
+
+  Basic Info
+    Ticket:               INC000000804714
+    Summary:              Data Backup and Recovery
+    Submitted:            Mon Feb 25 09:32:05 2008
+    Status:               Closed
+    [...]
+
+This is the default mode.
+
+=item remedy-ticket INC000000804714 full
+
+Offers a basic "debugging" mode for the ticket itself, so that all fields 
+in the ticket can be viewed.  Returns results like this:
+
+  Full information for INC000000804714
+
+             1 Entry ID                         INC000000804609
+             2 Submitter                        RemedyAPIUser
+             3 Submit Date                      1203960725
+             4 Assignee Login ID                jared14
+             5 Last Modified By                 AR_ESCALATOR
+             6 Last Modified Date               1209327132
+    [...]
+
+=item remedy-ticket INC000000804714 worklog
+
+Offers the same kind of "debugging" mode, but for the worklog information 
+regarding the ticket.  Returns results like this:
+
+Worklog Entries for INC000000804714
+
+  Entry 1
+             1 Work Log ID                      WLG000000809377
+             2 Submitter                        spyksma
+             3 Submit Date                      1204150081
+             4 Assigned To                      (none)
+      [...]
+   
+
+  Entry 2
+             1 Work Log ID                      WLG000000810435
+             2 Submitter                        cbyee
+             3 Submit Date                      1204229267
+             4 Assigned To                      (none)
+      [...]
+
+=item remedy-ticket INC000000804714 audit
+
+Prints all of the audit log information about the ticket.  
+
+=back
+
+=cut
+
+=head1 REQUIREMENTS
+
+B<Remedy::Ticket>
+
+=head1 HOMEPAGE
+
+TBD.
+
+=head1 AUTHOR
+
+Tim Skirvin <tskirvin@stanford.edu>
+
+=head1 LICENSE
+
+Copyright 2008-2009 Board of Trustees, Leland Stanford Jr. University
+
+This program is free software; you may redistribute it and/or modify
+it under the same terms as Perl itself.
+
+=cut

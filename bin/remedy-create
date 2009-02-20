@@ -1,0 +1,250 @@
+#!/usr/bin/perl
+# Copyright and license are in the documentation below.
+
+##############################################################################
+### Configuration
+##############################################################################
+
+## Modify and uncomment this to use user code instead of just system-wide
+## modules, or to use development versions.
+# use lib '/FULL/PATH/TO/PERL/MODULES';
+
+use lib "$ENV{HOME}/work/remedy/Stanford-Remedy/lib";   # not ideal
+use lib "$ENV{HOME}/work/libremedy-perl/lib";
+
+## Log level; higher is more.  '9' is considered fully verbose.
+our $LOGLEVEL = 1;
+
+## Tag to include include in the common log file
+our $LOG_TAG = "TKT_CREATE";
+
+our $CONFIG = "$ENV{HOME}/work/libremedy-perl/etc/remedy/config.sandbox";
+# our $CONFIG = "$ENV{HOME}/work/libremedy-perl/etc/remedy/config";
+
+our $DEBUG;
+our $TIME = 0;      # time spent
+our $USER = $ENV{'REMOTE_USER'} || $ENV{'USER'} || "unknown";
+our $GROUP = '';
+
+##############################################################################
+### Declarations
+##############################################################################
+
+use strict;
+use warnings;
+
+use Getopt::Long qw/GetOptions/;
+use Pod::Usage;
+use Remedy;
+use Text::Wrap;
+
+$0 =~ s%.*/%%g;     # Lose the annoying path information
+
+##############################################################################
+### main ()
+##############################################################################
+
+$|++;       # Flush output
+
+my $parser = new Getopt::Long::Parser;
+my $result = $parser->getoptions (
+    'c|config=s'    => \$CONFIG,
+    'time=s'        => \$TIME,
+    'user=s'        => \$USER,
+    'group=s'       => \$GROUP,
+    'd|debug'       => sub { $DEBUG = 1; $LOGLEVEL = 9 },
+    'man'           => sub { pod2usage (-verbose=>2) },
+    'h|help'        => sub { pod2usage (-verbose=>1) }) || pod2usage (1);
+
+debug ("Loading config file $CONFIG") if $CONFIG;
+my $config = eval { Remedy::Config->load ($CONFIG) };
+error ($@) unless $config;
+error ($config) if $@;
+
+$config->debug    ($DEBUG);
+$config->loglevel ($LOGLEVEL);
+
+my (@summary, $category, @rest) = @ARGV;
+
+debug ("Connecting to database");
+my $remedy = eval { Remedy->connect ($config) }
+    or error ("couldn't connect to database: $@");
+error ($@) if $@;
+
+print "this is a horrible idea\n";
+
+    my $tkt = $remedy->incident_create ();
+
+my $incnum = $tkt->get_incnum ('user' => $config->remedy_user,
+    'description' => "created by $0");  # also need status? 
+$tkt->inc_num ($incnum);
+
+# we're pulling this info from the command-line and/or environment
+$tkt->sunet ($USER);
+$tkt->summary ('The widget machine has stopped gadgeting.');
+
+# information that comes from the configuration, but can be overridden
+$tkt->set ('Company'         => $config->company,
+           'Contact Company' => $config->company);
+
+    # need to set 1000000215 (Reported Source) as well
+
+    # probably want all of this from LDAP 
+    $tkt->set (
+        'First Name'   => 'Tim',
+        'Last Name'    => 'Skirvin',
+        'Phone Number' => '555-555-1234',
+    );
+
+    # probably a combination of decent defaults and command-line
+    $tkt->set (
+        'Categorization Tier 1' => 'Training and Documentation',
+        'Categorization Tier 2' => 'Scheduling', 
+        'Categorization Tier 3' => '* General', 
+    );
+
+    # $tkt->set ('Service Type' => 'User Service Request');   # must be set, need the list later
+    $tkt->set ('Service Type' => 1);   # must be set, need the list later
+
+    print scalar $tkt->print_text;
+    $tkt->save;
+
+exit 0;
+
+##############################################################################
+### Subroutines 
+##############################################################################
+
+sub debug { warn "$0: @_\n" if $DEBUG }
+sub error { my $text = "@_"; chomp $text; die "$0: $text\n" }
+
+### _loglevel (LEVEL, TEXT)
+# Logs TEXT with mainlib.pl's log () function if the level passed is
+# less-or-equal to the current $LOGLEVEL.
+
+sub _loglevel {
+    my ($level, @args) = @_;
+    Stanford::Remedy::remedy_log_iflevel ($level, $LOG_TAG, @args);
+}
+
+##############################################################################
+### Documentation
+##############################################################################
+
+=head1 NAME
+
+remedy-create - creates remedy tickets
+
+=head1 SYNOPSIS
+
+B<remedy-ticket> [...]
+B<remedy-ticket> [...]
+
+
+=head1 DESCRIPTION
+
+remedy-ticket queries the Remedy database for information on a given ticket 
+(as refrenced with C<INCIDENT_NUMBER> and creates a human-parsable report 
+containing all relevant information, including worklog information.  It is 
+designed to be used through a remctl interface for the Unix Systems team.
+
+Note that extensive logging is stored in B</tmp/remedy_log.txt>.
+
+=head1 OPTIONS
+
+=over 4
+
+=item B<-h>, B<--help>
+
+Prints out the synopsis information and exits.
+
+=item B<-v>, B<--version>
+
+Prints out the version information and exits.
+
+=back
+
+=head1 EXAMPLES
+
+There are three basic modes of operation:
+
+=over 4
+
+=item remedy-ticket INC000000804714
+
+=item remedy-ticket INC000000804714 base
+
+Prints basic information about the ticket, the requestor, who it has been
+assigned to, resolution information, and a summary of the associated work
+log entries.  Returns results that look something like this (but longer):
+
+  Basic Info
+    Ticket:               INC000000804714
+    Summary:              Data Backup and Recovery
+    Submitted:            Mon Feb 25 09:32:05 2008
+    Status:               Closed
+    [...]
+
+This is the default mode.
+
+=item remedy-ticket INC000000804714 full
+
+Offers a basic "debugging" mode for the ticket itself, so that all fields 
+in the ticket can be viewed.  Returns results like this:
+
+  Full information for INC000000804714
+
+             1 Entry ID                         INC000000804609
+             2 Submitter                        RemedyAPIUser
+             3 Submit Date                      1203960725
+             4 Assignee Login ID                jared14
+             5 Last Modified By                 AR_ESCALATOR
+             6 Last Modified Date               1209327132
+    [...]
+
+=item remedy-ticket INC000000804714 worklog
+
+Offers the same kind of "debugging" mode, but for the worklog information 
+regarding the ticket.  Returns results like this:
+
+Worklog Entries for INC000000804714
+
+  Entry 1
+             1 Work Log ID                      WLG000000809377
+             2 Submitter                        spyksma
+             3 Submit Date                      1204150081
+             4 Assigned To                      (none)
+      [...]
+   
+
+  Entry 2
+             1 Work Log ID                      WLG000000810435
+             2 Submitter                        cbyee
+             3 Submit Date                      1204229267
+             4 Assigned To                      (none)
+      [...]
+
+=item remedy-ticket INC000000804714 audit
+
+Prints all of the audit log information about the ticket.  
+
+=back
+
+=cut
+
+=head1 REQUIREMENTS
+
+B<Stanford::Remedy>
+
+=cut
+
+=head1 AUTHOR
+
+Based on original unattributed source script 'show_inc_tkt'.  Rewritten and new
+features added by Tim Skirvin <tskirvin@stanford.edu>
+
+=head1 LICENSE
+
+For Stanford internal use only.
+
+=cut
