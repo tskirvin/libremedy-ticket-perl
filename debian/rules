@@ -45,6 +45,7 @@ install-stamp:
 
 	$(MAKE) test
 	$(MAKE) install DESTDIR=$(TMP) PREFIX=/usr
+	rsync -Crlpt --delete $(CURDIR)/etc $(TMP)
 
 	touch install-stamp
 

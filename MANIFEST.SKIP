@@ -1,0 +1,6 @@
+^debian
+\.git\/
+\.sw.$
+^Makefile.old$
+^MANIFEST.bak$
+^Makefile$
