@@ -38,9 +38,8 @@ impact, etc of the ticket; but there are a few other places for customization.
 our %TEXT = ('debug' => \&Remedy::Form::debug_text);
 
 our %FORM = (
-    'all'      => ['Remedy::Form::Task', 'Remedy::Form::Incident'],
+    'all'      => ['Remedy::Form::Incident'],
     'incident' => 'Remedy::Form::Incident',
-    'task'     => 'Remedy::Form::Task',
 );
     # might add Remedy::Form::Order
 
@@ -65,7 +64,6 @@ use Remedy::Ticket::Functions;
 use Remedy::Form::Audit;
 use Remedy::Form::Incident;
 use Remedy::Form::People;
-use Remedy::Form::Task;
 use Remedy::Form::TicketGen;
 use Remedy::Form::Time;
 use Remedy::Form::WorkLog;

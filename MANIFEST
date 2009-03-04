@@ -6,7 +6,6 @@ lib/Remedy/Form/Incident.pm
 lib/Remedy/Form/Task.pm
 lib/Remedy/Form/TicketGen.pm
 lib/Remedy/Form/Time.pm
-lib/Remedy/Form/User.pm
 lib/Remedy/Form/WorkLog.pm
 lib/Remedy/Ticket/Functions.pm
 lib/Remedy/Ticket.pm

@@ -102,7 +102,7 @@ sub set_status  { "not implemented" }
 
 Finds or creates the incident number for the current incident.  If we do not
 already have one set and stored in B<number ()>, then we will create one using
-B<Remedy::TicketGen ().
+B<Remedy::TicketGen ()>.
 
 =over 4
 

@@ -7,13 +7,14 @@ map { s%^%bin/% } @scripts;
 
 WriteMakefile(
     NAME              => 'Remedy::Ticket',
-    DISTNAME          => 'Remedy::Ticket',
+    DISTNAME          => 'Remedy-Ticket',
     ABSTRACT_FROM     => "lib/Remedy/Ticket.pm",
+    EXE_FILES         => \@scripts,
     dist              => { COMPRESS => 'gzip', SUFFIX => 'gz' },
     VERSION_FROM      => 'lib/Remedy/Ticket.pm', 
-    EXE_FILES         => \@scripts,
     AUTHOR            => 'Tim Skirvin <tskirvin@stanford.edu>',
     PREREQ_PM         => { 
-      'Remedy'              => '0.01'
+      'Remedy' => '0.01'
                          }, 
 );
+
