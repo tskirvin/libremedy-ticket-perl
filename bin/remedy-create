@@ -8,9 +8,9 @@
 ## Modify and uncomment this to use user code instead of just system-wide
 ## modules, or to use development versions.
 # use lib '/FULL/PATH/TO/PERL/MODULES';
-use lib "/afs/ir/users/t/s/tskirvin/private/work/remedy/libremedy-perl/lib";
-use lib "/afs/ir/users/t/s/tskirvin/private/work/remedy/Stanford-Remedy/lib";
-use lib "/afs/ir/users/t/s/tskirvin/private/work/remedy/libremedy-ticket-perl/lib";
+# use lib "/afs/ir/users/t/s/tskirvin/private/work/remedy/libremedy-perl/lib";
+# use lib "/afs/ir/users/t/s/tskirvin/private/work/remedy/Stanford-Remedy/lib";
+# use lib "/afs/ir/users/t/s/tskirvin/private/work/remedy/libremedy-ticket-perl/lib";
 
 ## Print debugging information?  Set with '--debug', can be set many times
 our $DEBUG = 0;

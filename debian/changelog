@@ -1,5 +1,12 @@
+libremedy-ticket-perl (0.2) intrepid UNRELEASED; urgency=low
+
+  * Should actually work.
+
+ -- Tim Skirvin <tskirvin@stanford.edu>  Thu, 12 Mar 2009 13:30:29 -0700
+
 libremedy-ticket-perl (0.1) intrepid UNRELEASED; urgency=low
 
   * Initial forked version.
+  * i
 
- -- Tim Skirvin <tskirvin@stanford.edu>  Thu, 26 Feb 2009 15:03:26 -0800
+ -- Tim Skirvin <tskirvin@stanford.edu>  Thu, 12 Mar 2009 13:30:17 -0700

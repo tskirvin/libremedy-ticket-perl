@@ -1,2 +1,2 @@
 # /etc/remctl/conf.d/ticket
-remedy ALL /usr/bin/remedy-ticket /etc/remctl/acl/operations
+ticket ALL /usr/bin/remedy-ticket /etc/remctl/acl/operations
