@@ -4,27 +4,29 @@ our $VERSION = "0.50";
 
 =head1 NAME
 
-Remedy::Audit - per-ticket worklogs
+Remedy::Form::Audit - per-ticket worklogs
 
 =head1 SYNOPSIS
 
-    use Remedy::Audit;
+    use Remedy::Form::Audit;
 
     # $remedy is a Remedy object
-    my @audit = $remedy->read ('EID' => 'INC000000002371');
-    for my $item (@audit) { print scalar $item->print_text }
+    foreach my $audit ($remedy->read ('audit', 'PARENT' => 
+        'INC000000002371')) {
+        print scalar $entry->print_text 
+    }
 
 =head1 DESCRIPTION
 
-Remedy::Audit monitors the automatically-generated audit logs for each
-incident.  It is a sub-class of B<Remedy::Form>, and most of its functionality
-is described there.  It is meant for use with the B<Remedy::Incident> and
-B<Remedy::Task> tables.
+Remedy::Form::Audit manages the I<HPD:HelpDesk_AuditLogSystem> form in Remedy,
+which tracks all edits to the remedy database.  
+
+Remedy::Form::Audit is a sub-class of B<Remedy::Form>, registered as I<audit>.
 
 =cut
 
 ##############################################################################
-### Declarations
+### Declarations #############################################################
 ##############################################################################
 
 use strict;
@@ -35,7 +37,7 @@ use Remedy::Form qw/init_struct/;
 our @ISA = init_struct (__PACKAGE__);
 
 ##############################################################################
-### Methods 
+### Class::Struct ############################################################
 ##############################################################################
 
 =head1 FUNCTIONS
@@ -44,29 +46,17 @@ our @ISA = init_struct (__PACKAGE__);
 
 =over 4
 
-=item id ($)
+=item id (I<Request ID>)
 
-Corresponds to 'Request ID' field.
+=item changes (I<Fields Changed>)
 
-=item create_time ($)
+=item create_time (I<Create Date>)
 
-Corresponds to 'Create Date' field.
+=item data (I<Log>)
 
-=item inc_ref ($)
+=item number (I<Original Request ID>)
 
-Corresponds to 'Original Request ID' field.
-
-=item user ($)
-
-Corresponds to 'User' field.
-
-=item fields ($)
-
-Corresponds to 'Fields Changed' field.
-
-=item data ($)
-
-Corresponds to 'Log' field.
+=item user (I<User>)
 
 =back
 
@@ -74,23 +64,37 @@ Corresponds to 'Log' field.
 
 sub field_map { 
     'id'          => 'Request ID',
+    'changes'     => "Fields Changed",
     'create_time' => 'Create Date',
+    'data'        => "Log",
     'number'      => "Original Request ID",
     'user'        => "User",
-    'changes'     => "Fields Changed",
-    'data'        => "Log",
 }
 
-=item limit_pre ()
+##############################################################################
+### Remedy::Form Overrides ###################################################
+##############################################################################
+
+=head2 B<Remedy::Form> Overrides
+
+=over 4
+
+=item limit_pre (ARGHASH)
+
+=over 4
+
+=item PARENT I<number>
+
+If set, then we will search based on the I<Original Request ID> field.
+
+=back
 
 =cut
 
 sub limit_pre {
     my ($self, %args) = @_;
     my $parent = $self->parent_or_die ();
-
     if (my $eid = $args{'PARENT'}) { return ('Original Request ID' => $eid); }
-
     return %args;
 }
 
@@ -127,9 +131,9 @@ sub table { 'HPD:HelpDesk_AuditLogSystem' }
 
 =cut
 
-###############################################################################
-### Final Documentation
-###############################################################################
+##############################################################################
+### Final Documentation ######################################################
+##############################################################################
 
 =head1 REQUIREMENTS
 

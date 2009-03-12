@@ -1,36 +1,35 @@
-#!/usr/bin/perl -T
+#!/usr/bin/perl
 # Copyright and license are in the documentation below.
 
 ##############################################################################
-### Configuration
+### Configuration ############################################################
 ##############################################################################
 
 ## Modify and uncomment this to use user code instead of just system-wide
 ## modules, or to use development versions.
 # use lib '/FULL/PATH/TO/PERL/MODULES';
-use lib "/afs/ir/users/t/s/tskirvin/work/remedy/Stanford-Remedy/lib";   # not ideal
-use lib "/afs/ir/users/t/s/tskirvin/work/libremedy-perl/lib";
+use lib "/afs/ir/users/t/s/tskirvin/private/work/remedy/libremedy-perl/lib";
+use lib "/afs/ir/users/t/s/tskirvin/private/work/remedy/Stanford-Remedy/lib";
+use lib "/afs/ir/users/t/s/tskirvin/private/work/remedy/libremedy-ticket-perl/lib";
 
 ## Number of days to go back for the 'unresolved' search. 
 our $DAYS = 0;
 
 ## Print debugging information?  Set with '--debug', can be set many times
-our $DEBUG = 4;
+our $DEBUG = 0;
 
 ## Default group information.  Related to, but not set by, '--group'.
 our $DEFAULT_GROUP = '';
 
 ## Default user information.  Related to, but not set by, '--user'.
 our $DEFAULT_USER = $ENV{'REMOTE_USER'} || $ENV{'USER'} || "unknown";
+    $DEFAULT_USER =~ s/\@.*$//;  # we only want the username
 
 ## Default request type, for convenience
 our %DEFAULT = (
-    'ticket' => 'summary',
+    'ticket' => '',
     'list'   => 'assign',
 );
-
-## Tag to include include in the common log file
-our $LOG_TAG = "REMEDY-TKT";
 
 ## Default ticket status for searching.
 our $STATUS = 'open';
@@ -39,7 +38,7 @@ our $STATUS = 'open';
 our $TIME = 0;
 
 ##############################################################################
-### Declarations
+### Declarations #############################################################
 ##############################################################################
 
 use strict;
@@ -55,23 +54,21 @@ $|++;               # Flush output
 use vars qw/$USER $GROUP/;
 
 ##############################################################################
-### main ()
+### main () ##################################################################
 ##############################################################################
 
 my $logger = Remedy::Log->get_logger;
 
 my $parser = new Getopt::Long::Parser;
 my $result = $parser->getoptions (
-    'time=s'        => \$TIME,
     'days=s'        => \$DAYS,
-    'user=s'        => \$USER,
+    'd|debug+'      => \$DEBUG,
     'group=s'       => \$GROUP,
     'status=s'      => \$STATUS,
-    'd|debug+'      => \$DEBUG,
+    'time=s'        => \$TIME,
+    'user=s'        => \$USER,
     'man'           => sub { pod2usage (-verbose => 2, -noperldoc => 1) },
     'h|help'        => sub { pod2usage (-verbose => 1) }) || error_usage ();
-
-map { untaint ($_) } $TIME, $DAYS, $USER, $GROUP, $STATUS;
 
 my $remedy = eval { Remedy::Ticket->connect ('debug' => $DEBUG) }
     or $logger->logdie ("couldn't connect to database: $@");
@@ -84,36 +81,9 @@ $query = lc $query;
 if      ($query eq 'ticket') { 
     my ($number, $type) = @rest;
     $type ||= $DEFAULT{lc $query};
-    $logger->info ("text ($number, $type)");
+    $logger->info (sprintf ("text (%s, %s)", $number, $type || '(default)'));
     print scalar $remedy->text ($number, $type);
     exit 0;
-
-} elsif ($query eq 'assign') {  # not yet working
-    my ($number) = @rest;
-
-    my %args;
-    $args{'user'}  = $USER  if $USER;
-    $args{'group'} = $GROUP if defined $GROUP;
-
-    if (my $return = $remedy->assign ($number, %args)) {
-        print "successfuly assigned $number\n";
-        print scalar $remedy->text ($number, 'assign');
-        exit 0;
-    } else {
-        print "failed to assign $number\n";
-    }
-
-} elsif ($query eq 'status') {
-     my ($number, $status) = @rest;
-    
-    $logger->info ("setting status of $number to '$status'");
-    if (my $error = $remedy->set_status ($number, $status)) {
-        print "failed to set status of $number to $status: $error\n";
-        exit 1;
-    } else {
-        print scalar $remedy->text ($number, 'default');
-        exit 0;
-    }
 
 } elsif ($query eq 'list') { 
     my ($type, $user, @extra) = @rest;
@@ -137,7 +107,7 @@ if      ($query eq 'ticket') {
 
     } elsif ($type eq 'submit') {
         $hash{'submitted_user'} = $user;
-        $user = '';
+        $USER = '';
         push @text, "submitted by '$user'";
 
     } elsif ($type eq 'unassigned') { 
@@ -149,8 +119,18 @@ if      ($query eq 'ticket') {
             push @text, "submitted by '$USER'";
         }
 
+    } elsif ($type eq '5day') {
+        $hash{'status'} = 'open';
+        $USER ||= $DEFAULT_USER;
+        $DAYS ||= 5;
+        push @text, "5 day report";
+
     } elsif ($type eq 'unresolved') { 
         $hash{'status'} = 'open';
+        push @text, "open tickets";
+
+    } elsif ($type eq 'resolved') { 
+        $hash{'status'} = 'closed';
         push @text, "open tickets";
 
     } else { error_usage ("invalid list type: '$type'") }
@@ -166,7 +146,7 @@ if      ($query eq 'ticket') {
         $logger->logdie ("user '$user' does not belong to any groups")
             unless scalar @return;
         my @groups;
-        foreach (@return) { push @groups, $_->group }
+        foreach (@return) { push @groups, $_->groups }
 
         if (scalar @groups) {
             push @text, "in all member groups of '$user'";
@@ -176,65 +156,113 @@ if      ($query eq 'ticket') {
 
     $logger->info (sprintf ("finding %s", join (", ", @text)));
     foreach my $tkt ($remedy->read ('ticket', %hash)) { 
-        print scalar $tkt->summary_text;
+        print scalar $tkt->print ('short');
     }
     exit 0;
 
 
+} elsif ($query eq 'assign') { 
+    my ($number) = @rest;
+    error_usage ('no ticket number') unless $number;
 
-
-
-} elsif (lc $query eq 'time_spent') { 
-    my ($inc, $minutes) = @rest;
-    my $tkt = get_ticket ($remedy, $inc) || error ("no ticket");
-
-    $logger->info ("Adding timelog information to ticket " . $tkt->inc_num);
-
-    # $tkt->time_spent ($minutes)
-    my $timelog = $tkt->timelog_create ();
-    $timelog->time_spent ($minutes);
-    $timelog->submitter ($USER || $DEFAULT_USER);
-
-    # ...then add it to the main tkt entry as well
-
-    print scalar $timelog->print_text;
-    if (eval { my $ret = $timelog ->save }) {
-        print "Timelog entry " . $timelog->id . " saved\n";        
-        exit 0;
-    } else {
-        error ("Error saving timelog entry: $@");
+    my (%args, @text);
+    if (defined $GROUP) { 
+        $args{'group'} = $GROUP;
+        push @text, "group $GROUP";
     }
 
+    if (defined $USER) { 
+        if ($USER) { 
+            $args{'user'} = $USER;
+            push @text, "user $USER";
+        } else {
+            $args{'user'} = undef;
+            push @text, "no user";
+        }
+    } 
+    error_usage ('no assignee information') unless scalar @text;
+    my $text = join (', ', @text);;
 
+    $logger->info ("assigning $number to $text");
+    if (my $return = $remedy->assign ($number, %args)) {
+        $logger->warn ("failed to assign $number: $return");
+        exit 1;
+    } else {
+        $logger->warn ("assigned $number to $text");
+        print scalar $remedy->text ($number, 'assign');
+        exit 0;
+    }
 
+} elsif ($query eq 'unassign') {
+    my ($number) = @rest;
+    error_usage ('no ticket number') unless $number;
+
+    if (my $return = $remedy->unassign ($number)) {
+        $logger->warn ("failed to unassign $number: $return");
+        exit 1;
+    } else {
+        $logger->warn ("unassigned $number");
+        print scalar $remedy->text ($number, 'assign');
+        exit 0;
+    }
+    
+
+} elsif ($query eq 'status') {
+    my ($number, $status) = @rest;
+    error_usage ('no ticket number')  unless $number;
+    error_usage ('no status offered') unless $status;
+    
+    $logger->info ("setting status of $number to '$status'");
+    if (my $error = $remedy->set_status ($number, $status)) {
+        print "failed to set status of $number to $status: $error";
+        my $values = join (", ", $remedy->values ('Incident', 'Status'));
+        print "valid status values: $values\n";
+        exit 1;
+    } else {
+        print scalar $remedy->text ($number, 'primary');
+        exit 0;
+    }
+
+} elsif ($query eq 'resolve') {
+    my ($number, $text) = @rest;
+    error_usage ('no text offered for resolution') unless $text;
+
+    my %extra = ('timespent' => $TIME,
+                 'user'      => $USER || $DEFAULT_USER);
+    
+    $logger->info ("resolving '$number'");
+    if (my $error = $remedy->resolve ($number, $text, %extra)) {
+        $logger->warn ("failed to resolve $number: $error");
+        exit 1;
+    } else {
+        print "Resolved '$number'\n";
+        print scalar $remedy->text ($number);
+        exit 0;
+    }
 
 } elsif (lc $query eq 'worklog') { 
-    my ($inc, $text) = @rest;
-    my $incnum = $remedy->parse_incident_number ($inc)
-        or pod2usage (-verbose => 1, "Invalid ticket number: $inc");
-    pod2usage (-verbose => 1) unless defined $incnum;
+    my ($number, $text) = @rest;
 
-    $logger->info ("Adding worklog information to ticket $incnum");
-    my $tkt = $remedy->incident ($incnum)
-        or $remedy->die_error ("Couldn't load $incnum", $remedy->error);
+    $logger->info ("Adding worklog information to ticket $number");
+    my @tickets = $remedy->get ($number);
+    $logger->logdie ("no matching tickets: '$number'") unless scalar @tickets;
+    
+    foreach my $tkt (@tickets) { 
+        my $worklog = $tkt->worklog_create ();
 
-    my $worklog = $tkt->worklog_create ();
+        $worklog->details     ($text);
+        $worklog->submitter   ($USER || $DEFAULT_USER);
+        $worklog->description ("submitted through script '$0'");
+        $worklog->type        ('General Information'); 
+        $worklog->time_spent  ($TIME) if defined $TIME; 
 
-    # all of this data needs a bit of work, but it's reasonably accurate
-    $worklog->details ($text);
-    $worklog->submitter ($USER || $DEFAULT_USER);
-    $worklog->description ("submitted through script '$0'");
-    $worklog->type ('General Information');     # probably ought to come from something else
-
-    $worklog->time_spent ($TIME); 
-    # care about 'time' (3)?
-
-    print scalar $worklog->print_text;
-    if (eval { my $ret = $worklog->save }) {
-        print "Worklog entry " . $worklog->id . " saved\n";        
-        exit 0;
-    } else {
-        error ("error saving worklog entry: $@");
+        if (my $error = $worklog->save) {
+            $logger->error ("error saving worklog entry: $error");
+        } else {
+            print "Worklog entry " . $worklog->id . " saved\n";        
+            print scalar $worklog->print;
+            exit 0;
+        }
     }
 
 } elsif (lc $query eq 'help') {
@@ -245,9 +273,11 @@ if      ($query eq 'ticket') {
 exit 0;
 
 ##############################################################################
-### Subroutines 
+### Subroutines ##############################################################
 ##############################################################################
 
+### error_usage (ERROR)
+# Exit out with pod2usage
 sub error_usage { 
     my ($error) = @_;
     my $logger = Remedy::Log->get_logger ();
@@ -255,27 +285,8 @@ sub error_usage {
     pod2usage (-exit_status => 2, -verbose => 1);
 }
 
-sub get_ticket {
-    my ($remedy, $number) = @_;
-    my $logger = $remedy->logger_or_die ('no logger when getting ticket');
-    $logger->info ("getting ticket '$number'");
-    my $tkt = eval { $remedy->get ($number) };
-    $logger->logdie ("error loading '$number': $@") if $@ || !$tkt;
-    return $tkt;
-}
-
-### untaint (TEXT, MATCH)
-# Untaint user-offered data that is "safe enough", or die if it's not.
-sub untaint {
-    my ($text, $match) = @_;
-    $match ||= '[a-zA-Z0-9_./: \-+=]*';
-    return '' unless defined $text;
-    if ($text =~ m%^($match)$%) { return $1 } 
-    else                        { die ("tainted data: '$text' ($match)\n") }
-}
-
 ##############################################################################
-### Documentation
+### Documentation ############################################################
 ##############################################################################
 
 =head1 NAME
@@ -284,100 +295,203 @@ remedy-ticket - manage remedy tickets
 
 =head1 SYNOPSIS
 
-B<remctl tools remedy ticket> ticket I<NUMBER>
+B<remedy-ticket> ticket I<NUMBER>
 
-B<remctl tools remedy ticket> list I<TYPE> I<ARGS>
+B<remedy-ticket> assign I<NUMBER> (--user I<USER>|--group I<GROUP>)
 
-B<remctl tools remedy ticket> [...]
+B<remedy-ticket> list I<TYPE> I<ARGS>
+
+B<remedy-ticket> resolve I<NUMBER> I<TEXT>
+
+B<remedy-ticket> status I<STATUS>
+
+B<remedy-ticket> time_spent I<NUMBER> I<MINUTES>
+
+B<remedy-ticket> unassign I<NUMBER>
+
+B<remedy-ticket> worklog I<NUMBER> I<TEXT>
 
 =head1 DESCRIPTION
 
-remedy-ticket queries the Remedy database for information on a given ticket 
-(as refrenced with C<INCIDENT_NUMBER> and creates a human-parsable report 
-containing all relevant information, including worklog information.  It is 
-designed to be used through a remctl interface for the Unix Systems team.
+remedy-ticket offers basic interfaces to the functions that the ITS Unix
+Systems team needs to handle day-to-day ticket work without using a web
+browser.  It is designed to be used through remctl.
 
 =head1 OPTIONS
 
 =over 4
 
+=item B<-d>, B<--debug>
+
+Print debugging information, both within this module and within the Remedy
+module.  Can be offered multiple times to increase debugging accordingly.
+
+=item B<--days> DAYS
+
+For searches, how many days back should we look?
+
+=item B<--group> GROUP 
+
+For searches, what support group are we searching for?
+
 =item B<-h>, B<--help>
 
 Prints out the synopsis information and exits.
 
-=item B<-v>, B<--version>
+=item B<--man>
 
-Prints out the version information and exits.
+Prints out the full help documentation and exits.
+
+=item B<--status> STATUS
+
+For searches, what ticket status are we looking for?  
+
+=item B<--time> TIME
+
+For resolving tickets and creating worklogs, when should we say this input came
+in?
+
+=item B<--user> USER
+
+For searches, what username are we searching for?
 
 =back
 
 =head1 EXAMPLES
 
-There are three basic modes of operation:
-
 =over 4
 
-=item remedy-ticket INC000000804714
+=item B<remedy-ticket> ticket I<NUMBER> (I<TYPE>)
 
-=item remedy-ticket INC000000804714 base
+Pulls ticket number I<NUMBER> and prints information about it.  By default,
+this returns the primary ticket information (number, summary, status, etc), 
+the requestor information, the assignee information, the user-provided
+description, resolution information (if any), and worklog entries; but if
+I<TYPE> is offered (and is from this list), then we will print different
+information.
 
-Prints basic information about the ticket, the requestor, who it has been
-assigned to, resolution information, and a summary of the associated work
-log entries.  Returns results that look something like this (but longer):
+=over 2
 
-  Basic Info
-    Ticket:               INC000000804714
-    Summary:              Data Backup and Recovery
-    Submitted:            Mon Feb 25 09:32:05 2008
-    Status:               Closed
-    [...]
+=item assign
 
-This is the default mode.
+Just print the primary and assignment information.
 
-=item remedy-ticket INC000000804714 full
+=item audit
 
-Offers a basic "debugging" mode for the ticket itself, so that all fields 
-in the ticket can be viewed.  Returns results like this:
+Print the audit lots for this entry.
 
-  Full information for INC000000804714
+=item debug
 
-             1 Entry ID                         INC000000804609
-             2 Submitter                        RemedyAPIUser
-             3 Submit Date                      1203960725
-             4 Assignee Login ID                jared14
-             5 Last Modified By                 AR_ESCALATOR
-             6 Last Modified Date               1209327132
-    [...]
+Print the raw data for this ticket.
 
-=item remedy-ticket INC000000804714 worklog
+=item primary
 
-Offers the same kind of "debugging" mode, but for the worklog information 
-regarding the ticket.  Returns results like this:
+Just print the primary information.
 
-Worklog Entries for INC000000804714
+=item summary
 
-  Entry 1
-             1 Work Log ID                      WLG000000809377
-             2 Submitter                        spyksma
-             3 Submit Date                      1204150081
-             4 Assigned To                      (none)
-      [...]
-   
+Print the primary information and a short summary of how much other data there
+is regarding the ticket.
 
-  Entry 2
-             1 Work Log ID                      WLG000000810435
-             2 Submitter                        cbyee
-             3 Submit Date                      1204229267
-             4 Assigned To                      (none)
-      [...]
+=item worklog
 
-=item remedy-ticket INC000000804714 audit
-
-Prints all of the audit log information about the ticket.  
+Print all worklog entries.
 
 =back
 
-=cut
+Uses B<Remedy::Ticket::text ()>.
+
+=item B<remedy-ticket> assign I<NUMBER> (--user I<USER>|--group I<GROUP>)
+
+Assigns ticket I<NUMBER> to a group and/or user (at least one of which must be
+offered).  
+
+=item B<remedy-ticket> list I<TYPE> (I<USER> I<ARGS>)
+
+Lists a short (3 lines or so) summary of each ticket matching the search time
+from I<TYPE>.  I<USER> is a username (netid) that we will use in most searches;
+if not offered, we will default to the value passed in from I<--user> (or the
+user that invoked the script if neither is offered).
+
+Valid types (along with the argument that they take, from I<ARGS>):
+
+=over 2
+
+=item 5day
+
+The '5-day report' - shows open tickets that haven't been modified in 5 days
+and are in groups associated with I<USER>.
+
+=item all
+
+Shows all tickets.  You'll probably want to restrict this.
+
+=item assign
+
+Show tickets assigned to I<USER>.
+
+=item resolved
+
+Only show closed tickets.
+
+=item submit
+
+Show tickets submitted by I<USER>.
+
+=item unassigned
+
+Only show unassigned tickets.  I<--user> was passed as a command line, then we
+will also only show tickets submitted by that user.
+
+=item unresolved
+
+Only show open tickets.
+
+=back
+
+Additionally, we can add some more search requirements with some command-line
+flags (which are sometimes overridden above).
+
+=over 2
+
+=item DAYS
+
+Only show tickets that have been unmodified for this many days.
+
+=item USER
+
+Only show tickets that belong to a group that the given user belongs to.
+Note that this is overridden 
+
+=item GROUP
+
+Only show tickets in the group I<GROUP>.
+
+=back
+
+=item B<remedy-ticket> resolve I<NUMBER> I<TEXT> [--time I<TIME>] [--user I<USER>]
+
+Resolves the ticket I<NUMBER> with the text I<TEXT>.
+
+=item B<remedy-ticket> status I<STATUS>
+
+Sets the status of ticket I<NUMBER> to I<STATUS>.  On failure, this will list
+the various status types; please note that business logic may make this
+inaccurate.
+
+=item B<remedy-ticket> unassign I<NUMBER>
+
+Assigns ticket I<NUMBER> back to the help desk.
+
+=item B<remedy-ticket> worklog I<NUMBER> I<TEXT>
+
+Adds a worklog entry with the text I<TEXT> to the ticket I<NUMBER>.
+
+=item B<remedy-ticket> time_spent I<NUMBER> I<MINUTES>
+
+Adds I<MINUTES> minutes to the time spent on I<NUMBER>.
+
+=back
 
 =head1 REQUIREMENTS
 

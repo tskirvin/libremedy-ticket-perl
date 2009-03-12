@@ -1,55 +1,66 @@
 package Remedy::Ticket;
-our $VERSION = "0.10";
+our $VERSION = "0.40";
 # Copyright and license are in the documentation below.
 
 =head1 NAME
 
-Remedy::Ticket - [...]
+Remedy::Ticket - manage tickets through the Remedy interface
 
 =head1 SYNOPSIS
 
-use Remedy::Ticket;
+    use Remedy::Ticket;
 
-# $remedy is a Remedy object
-[...]
-
+    my $logger = Remedy::Log->get_logger;
+    my $remedy = eval { Remedy::Ticket->connect }
+        or $logger->logdie ("couldn't connect to database: $@");
+    
+    my ($number) = @_;
+    print scalar $remedy->text ($number, 'primary');
+    
 =head1 DESCRIPTION
 
-Stanfor::Remedy::Incident maps users (the B<User> table) to support groups
-(B<Group>).
+Remedy::Ticket manages tickets in the Remedy system.  It is designed to be able
+to handle different types of tickets (incidents vs tasks vs orders, etc) within
+the same interface.
+
+Remedy::Ticket is a sub-class of B<Remedy>, with new ticket-specific functions
+added.
 
 =cut
 
 ##############################################################################
-### Configuration 
+### Configuration ############################################################
 ##############################################################################
 
 =head1 VARIABLES
 
-These variables primarily hold human-readable translations of the status,
-impact, etc of the ticket; but there are a few other places for customization.
-
 =over 4
 
-=item %TEXT
+=item %FORM
+
+Keeps track of the different types of ticket that we manage.  Keys are a short
+name, values are the package name that manages that particular type of ticket.
+For instance, there is the key I<incident> and the value
+B<Remedy::Form::Incident>.
+
+The value for the key I<all> is a special-case; it contains an arrayref of 
+package names that we are managing.
+
+We currently only know about incidents.  This will change.
 
 =cut
-
-our %TEXT = ('debug' => \&Remedy::Form::debug_text);
 
 our %FORM = (
     'all'      => ['Remedy::Form::Incident'],
     'incident' => 'Remedy::Form::Incident',
 );
-    # might add Remedy::Form::Order
-
 
 =back
 
 =cut
 
 ##############################################################################
-### Declarations
+### Declarations #############################################################
 ##############################################################################
 
 use strict;
@@ -59,14 +70,9 @@ use Class::Struct;
 use Lingua::EN::Inflect qw/inflect/;
 
 use Remedy;
-use Remedy::Ticket::Functions;
-
-use Remedy::Form::Audit;
 use Remedy::Form::Incident;
 use Remedy::Form::People;
-use Remedy::Form::TicketGen;
-use Remedy::Form::Time;
-use Remedy::Form::WorkLog;
+use Remedy::Form::SupportGroup;
 
 our @ISA; 
 push @ISA, qw/Remedy/;
@@ -74,16 +80,36 @@ push @ISA, qw/Remedy/;
 Remedy::Form->register ('ticket', $FORM{'all'});
 
 ##############################################################################
-### Subroutines
+### Subroutines ##############################################################
 ##############################################################################
 
 =head1 FUNCTIONS
 
-=head2 Local Methods
+For the most part, these functions take care of all database updates.
 
 =over 4
 
+=item assign (NUMBER, ARGHASH) 
+
+Assigns ticket I<NUMBER> to a given user or group.  I<ARGHASH> must include
+either the key I<user> or I<group>.  Uses B<run_on_tickets ()>.
+
+=cut
+
+sub assign  {
+    my ($self, $number, @rest) = @_;
+    return "no ticket number" unless $number;
+    return $self->run_on_tickets ('assign', $number, @rest);
+}
+
 =item get (NUMBER)
+
+Looks for the ticket with the number I<NUMBER>.  This means parsing I<NUMBER>
+into a full ticket number (B<ticket_number ()> and ticket type (B<ticket_type
+()>), then using B<read ()> to find all matching tickets.  In an array context,
+returns all of the matching tickts; in a scalar context, only returns the first
+one.  In either case, returns undef if nothing matches, and dies if the number 
+was in fact bad.
 
 =cut
 
@@ -104,73 +130,11 @@ sub get {
 
     return unless scalar @tkt;
     return wantarray ? @tkt : $tkt[0];
-}   
-
-=item list (CONSTRAINTS)
-
-=cut
-
-sub list {}
-
-=item close (TEXT)
-
-=cut
-
-sub close {
-    my ($self, $text, %args) = @_;
-    # $self->assign
-}
-
-=item assign () 
-
-=cut
-
-## need to set 'Support Company', 'Support Organization', 'Owner Group',
-## 'Owner Group ID', 'Assignee'
-sub assign  {
-    my ($self, $number, %args) = @_;
-    my $logger = $self->logger_or_die;
-
-    my $group = $args{'group'};
-
-    my %toset;
-
-    if (my $user = defined $args{'user'}) { 
-        $toset{'Assignee'} = $user;
-    } elsif (exists $args{'user'}) {
-        $toset{'Assignee'} = undef;
-    }
-
-    if (my $group = defined $args{'group'}) {
-    } elsif (exists $args{'group'}) {
-    }
-
-    if (exists $args{'user'}) {
-        my $user = $args{'user'};
-        # $logger->
-        my %person_search = ('SUNET ID' => $user);
-        my @return = $self->read ('people', %person_search);
-        unless (scalar @return) { 
-            # $logg
-        }
-        $logger->logdie ("user '$user' does not belong to any groups")
-            unless scalar @return;
-        my @groups;
-        foreach (@return) { push @groups, $_->group }
-
-       # if (scalar @groups) {
-       #     push @text, "in all member groups of '$user'";
-       #     $hash{'groups'} = \@groups;
-       # }
-    }
-
-    my @tickets = $self->get ($number);
-    foreach my $tkt (@tickets) { 
-        
-    }
 }
 
 =item resolve (NUMBER, TEXT)
+
+Resolves the ticket I<NUMBER> with the text I<TEXT>, using B<run_on_tickets ()>.
 
 =cut
 
@@ -178,10 +142,65 @@ sub resolve {
     my ($self, $number, $text, @rest) = @_;
     return "no ticket number" unless $number;
     return "no resolution text" unless $text;
-    return _run_on_tickets ($self, 'resolve', $number, $text, @rest);
+    return $self->run_on_tickets ('resolve', $number, $text, @rest);
 }
 
-=item set_status ()
+=item run_on_tickets (FUNC, NUMBER, ARGS)
+
+Runs the function I<FUNC> (defined with in the appropriate form sub-class, e.g.
+B<Remedy::Form::Incident> on all tickets matching I<NUMBER>, and saves them on
+success.  Basically, this is the black-magic function of everything.
+
+Returns undef on success, or the text of the errors if there are errors.
+
+=cut
+
+sub run_on_tickets {
+    my ($self, $func, $number, @args) = @_;
+    my $logger  = $self->logger_or_die;
+    my $session = $self->session_or_die;
+
+    $logger->debug ("getting tickets named '$number'");
+    my @tickets = $self->get ($number);
+    return "no matching ticket" unless scalar @tickets;
+    my $errors = 0;
+    foreach my $tkt (@tickets) { 
+        # my $clone = $tkt->clone;
+        my $tktnumber = $tkt->number;
+        unless ($tktnumber) { 
+            $logger->error ("no ticket number, skipping");
+            $errors++;
+            next;
+        }
+        $logger->debug ("running '$func' on '$tktnumber'");
+
+        if (my $error = $tkt->$func (@args)) {
+            $logger->error ("$func: $error");
+            $errors++;
+            next;
+        }
+
+        $logger->debug ("saving '$tktnumber'");
+        if (my $error = $tkt->save) { 
+            $logger->error ("could not save '$tktnumber': ", $session->error);
+            $errors++;
+        } else {
+            $logger->info ("successfully saved '$tktnumber'");
+        }
+    }
+    
+    my $text = sprintf ("%s out of %s", 
+        inflect ("NUM($errors) PL_N(error)"),
+        inflect (sprintf ("NUM(%d) PL_N(ticket)", scalar @tickets)));
+    $logger->info ($text);
+    return $text if $errors;
+    return;
+}
+
+=item set_status (NUMBER, STATUS)
+
+Sets the status of ticket I<NUMBER> to I<STATUS>.  Note that we do no
+error-checking on whether this is a valid status.  Uses B<run_on_tickets ()>.
 
 =cut
 
@@ -189,10 +208,53 @@ sub set_status {
     my ($self, $number, $status, @rest) = @_;
     return "no ticket number" unless $number;
     return "no status offered" unless $status;
-    return _run_on_tickets ($self, 'set_status', $number, $status, @rest);
+    return $self->run_on_tickets ('set_status', $number, $status, @rest);
 }
 
-=item text (NUMBER, TYPE)
+=item text (NUMBER [, TYPE])
+
+Returns a nicely formatted string with information about the ticket I<NUMBER>.
+I<TYPE> is used to decide which kind of information we want, from the following
+list:
+
+=over 4
+
+=item (default)
+
+primary, requestor, assignee, description, resolution, worklog
+
+=item debug
+
+debug
+
+=item audit
+
+primary, audit
+
+=item worklog
+
+primary, worklog
+
+=item summary
+
+primary, summary
+
+=item assign
+
+primary, assignee
+
+=item primary 
+
+primary
+
+=item all, full
+
+Adds 'audit' and 'summary' the default list.
+
+=back
+
+Does not use B<run_on_ticket ()>, for a change.  Dies if there is no relevant
+ticket.
 
 =cut
 
@@ -202,14 +264,13 @@ sub text {
 
     $type ||= '';
     my @list = qw/primary requestor assignee description resolution worklog/;
-    if    (lc $type eq 'debug')      { @list = qw/debug/            } 
-    elsif (lc $type eq 'audit')      { @list = qw/primary audit/    } 
-    elsif (lc $type eq 'worklog')    { @list = qw/primary worklog/  } 
-    elsif (lc $type eq 'timelog')    { @list = qw/primary timelog/  } 
-    elsif (lc $type eq 'summary')    { @list = qw/primary summary/  } 
-    elsif (lc $type eq 'assign')     { @list = qw/primary assignee/ }
-    elsif ($type =~ /^(all|full)$/i) { push @list, qw/audit time/   } 
-    else                             { push @list, qw/summary/      } 
+    if    (lc $type eq 'debug')      { @list = qw/debug/             } 
+    elsif (lc $type eq 'audit')      { @list = qw/primary audit/     } 
+    elsif (lc $type eq 'worklog')    { @list = qw/primary worklog/   } 
+    elsif (lc $type eq 'summary')    { @list = qw/primary summary/   } 
+    elsif (lc $type eq 'assign')     { @list = qw/primary assignee/  }
+    elsif (lc $type eq 'primary')    { @list = qw/primary/           }
+    elsif ($type =~ /^(all|full)$/i) { push @list, qw/audit summary/ } 
     $logger->debug ('text types: ' . join (', ', @list));
 
     local $@;
@@ -217,29 +278,6 @@ sub text {
     $logger->logdie ("error loading '$number': $@") if $@ || !$tkt;
 
     return $tkt->print (@list);
-}
-
-sub worklog_add {}
-sub timelog_add {}
-
-=cut
-
-    $tktdata{'1000000156'} = $text;                 # 'Resolution'
-    $tktdata{'1000005261'} = time;                  # 'Resolution Date'
-    $tktdata{'7'}          = 4;                     # 'Status' = "Resolved"
-    $tktdata{'1000000215'} = 11000;                 # 'Reported Source'
-    $tktdata{'1000000150'} = 17000;                 # "No Further Action Required"
-    # Not doing 1000000642, "Time Spent"
-
-=cut
-
-=item assignee 
-
-=cut
-
-sub assignee {
-    my ($self) = @_;
-    return $self->format_email ($self->assignee_name, $self->assignee_sunet);
 }
 
 =item ticket_number (NUMBER)
@@ -271,6 +309,24 @@ sub ticket_number {
 
 =item ticket_type (NUMBER)
 
+Based on I<NUMBER>, says what kind of ticket type this should be.  We determine
+this by looking at the first three letters of the number:
+
+=over 4
+
+=item INC => I<incident>
+
+=item TAS => I<task> 
+
+Not supported.
+
+=item HD0 => I<order>
+
+Not supported.
+
+=back
+
+Returns the ticket type, or 'unknown' if we can't tell.
 
 =cut
 
@@ -283,289 +339,24 @@ sub ticket_type {
     else                        { return 'unknown'  } 
 }
 
-=item requestor
+=item unassign (NUMBER)
+
+"Unassigns" a ticket, which means clearing the user field and sending it back
+to the top-level help desk (as defined in I<helpdesk> as part of
+B<Remedy::Config>).  Uses B<run_on_tickets ()>.
 
 =cut
 
-sub requestor {
-    my ($self) = @_;
-    my $name = join (" ", $self->requestor_first_name || '',
-                          $self->requestor_last_name || '');
-    return $self->format_email ($name, $self->requestor_email || '');
-}
-
-=item text_assignee ()
-
-=cut
-
-sub text_assignee {
-    my ($self) = @_;
-    my @return = "Ticket Assignee Info";
-    push @return, $self->format_text_field ( 
-        {'minwidth' => 20, 'prefix' => '  '}, 
-        'Group'         => $self->assignee_group || "(unassigned)",
-        'Name'          => $self->assignee,
-        'Last Modified' => $self->date_modified,
-    );
-    return wantarray ? @return : join ("\n", @return, '');
-}
-$TEXT{'assignee'} = \&text_assignee;
-
-=item text_audit
-
-=cut
-
-sub text_audit {
-    my ($self, %args) = @_;
-    my ($count, @return);
-    foreach my $audit ($self->audit (%args)) { 
-        push @return, '' if $count;
-        push @return, "Audit Entry " . ++$count;
-        push @return, ($audit->print);
-    }
-    return "No Audit Information" unless $count;
-    unshift @return, "Audit Entries ($count)";
-    return wantarray ? @return : join ("\n", @return, '');
-}
-$TEXT{'audit'} = \&text_audit;
-
-=item text_description ()
-
-=cut
-
-sub text_description {
-    my ($self) = @_;
-    my @return = "User-Provided Description";
-    push @return, $self->format_text ({'prefix' => '  '},
-        $self->description || '(none)');
-    return wantarray ? @return : join ("\n", @return, '');
-}
-$TEXT{'description'} = \&text_description;
-
-=item text_primary ()
-
-=cut
-
-sub text_primary {
-    my ($self, %args) = @_;
-    my @return = "Primary Ticket Information";
-    push @return, $self->format_text_field ( 
-        {'minwidth' => 20, 'prefix' => '  '}, 
-        'Ticket'            => $self->inc_num       || "(none set)", 
-        'Summary'           => $self->summary,
-        'Status'            => $self->status        || '(not set/invalid)',
-        'Status Reason'     => $self->status_reason || '(not set)',
-        'Submitted'         => $self->date_submit,
-        'Urgency'           => $self->urgency       || '(not set)',
-        'Priority'          => $self->priority      || '(not set)',
-        'Incident Type'     => $self->incident_type || "(none)",
-    );
-
-    return wantarray ? @return : join ("\n", @return, '');
-}
-$TEXT{'primary'} = \&text_primary;
-
-=item text_requestor ()
-
-=cut
-
-sub text_requestor {
-    my ($self) = @_;
-    my @return = "Requestor Info";
-    
-    push @return, $self->format_text_field (
-        {'minwidth' => 20, 'prefix' => '  '}, 
-        'SUNet ID'    => $self->sunet || "(none)",
-        'Name'        => $self->requestor,
-        'Phone'       => $self->requestor_phone,
-        'Affiliation' => $self->requestor_affiliation,
-    );
-    
-    return wantarray ? @return : join ("\n", @return, '');
-}
-$TEXT{'requestor'} = \&text_requestor;
-
-sub text_resolution {
-    my ($self) = @_;
-    my @return = "Resolution";
-
-    my $resolution= $self->resolution || return;
-    push @return, $self->format_text_field ( 
-        {'minwidth' => 20, 'prefix' => '  '}, 
-        'Date'              => $self->date_resolution,
-    );
-    push @return, '', $self->format_text ({'prefix' => '  '}, $resolution);
-
-    return wantarray ? @return : join ("\n", @return, '');
-}
-$TEXT{'resolution'} = \&text_resolution;
-
-sub text_summary {
-    my ($self, %args) = @_;
-    my @return = "Summary Ticket Information";
-    my @timelog = $self->timelog (%args);
-    my @worklog = $self->worklog (%args);
-    my @audit   = $self->audit   (%args);
-    push @return, $self->format_text_field ( 
-        {'minwidth' => 20, 'prefix' => '  '}, 
-        'WorkLog Entries' => scalar @worklog,
-        'TimeLog Entries' => scalar @timelog,
-        'Audit Entries'   => scalar @audit,
-        'Time Spent (mins)' => $self->total_time_spent || 0,
-    );
-    
-    return wantarray ? @return : join ("\n", @return, '');
-}
-$TEXT{'summary'} = \&text_summary;
-
-=item text_timelog ()
-
-=cut
-
-sub text_timelog {
-    my ($self, %args) = @_;
-    my (@return, $count);
-    foreach my $time ($self->timelog (%args)) { 
-        push @return, '' if $count;
-        push @return, "Time Entry " . ++$count;
-        push @return, ($time->print);
-    }
-    return "No TimeLog Entries";
-    return wantarray ? @return : join ("\n", @return, '');
-}
-$TEXT{'timelog'} = \&text_timelog;
-
-=item text_worklog ()
-
-=cut
-
-sub text_worklog {
-    my ($self, %args) = @_;
-    my (@return, $count);
-    foreach my $worklog ($self->worklog (%args)) { 
-        push @return, '' if $count;
-        push @return, "Work Log Entry " . ++$count;
-        push @return, ($worklog->print);
-    }
-    return "No WorkLog Entries" unless $count;
-    return wantarray ? @return : join ("\n", @return, '');
-}
-$TEXT{'worklog'} = \&text_worklog;
-
-=back
-
-=cut
-
-##############################################################################
-### Related Classes
-##############################################################################
-
-=head2 Related Classes
-
-=over 4
-
-=item worklog_create ()
-
-Creates a new worklog entry, pre-populated with the date and the current
-incident number.  You will still have to add other data.
-
-=over 4
-
-=back
-
-=cut
-
-sub worklog_create {
-    my ($self, %args) = @_;
-    return unless $self->inc_num;
-    my $worklog = $self->create ('Remedy::Form::WorkLog', %args);
-    $worklog->number ($self->number);
-    $worklog->date_submit ($self->format_date (time));
-    return $worklog;
-}
-
-=item timelog_create (TIME)
-
-=cut
-
-sub timelog_create {
-    my ($self, %args) = @_;
-    return unless $self->inc_num;
-    my $timelog = $self->parent_or_die (%args)->create ('Remedy::Form::Time');
-    $timelog->number ($self->number);
-    return $timelog;
-}
-
-=back
-
-=item table ()
-
-=cut
-
-sub table { 'HPD:Help Desk' }
-
-=item name (FIELD)
-
-=cut
-
-sub name { 
-    my ($self, $field) = @_;
-    my $id = $self->field_to_id ($field);
-    return $self->map->{$field};
+sub unassign {
+    my ($self, $number) = @_;
+    return "no ticket number" unless $number;
+    return $self->run_on_tickets ('assign', $number, 'user' => undef, 
+        'group' => $self->config_or_die->helpdesk);
 }
 
 =back
 
 =cut
-
-##############################################################################
-### Internal Subroutines #####################################################
-##############################################################################
-
-sub _run_on_tickets {
-    my ($self, $func, $number, @args) = @_;
-    my $logger  = $self->logger_or_die;
-    my $session = $self->session_or_die;
-
-    $logger->debug ("getting tickets named '$number'");
-    my @tickets = $self->get ($number);
-    return "no matching ticket" unless scalar @tickets;
-    my $errors = 0;
-    foreach my $tkt (@tickets) { 
-        my $tktnumber = $tkt->number;
-        unless ($tktnumber) { 
-            $logger->error ("no ticket number, skipping");
-            $errors++;
-            next;
-        }
-        $logger->debug ("running '$func' on '$tktnumber'");
-
-        if (my $error = $tkt->$func (@args)) {
-            $logger->error ("$func: $error");
-            $errors++;
-            next;
-        }
-
-        $logger->debug ("saving '$tktnumber'");
-
-        if (my $error = $tkt->save) { 
-            $logger->error ("could not save '$tktnumber': ", $session->error);
-            $errors++;
-        } else {
-            $logger->info ("successfully saved '$tktnumber'");
-            
-        }
-    }
-    
-    my $text = sprintf ("%s out of %s", 
-        inflect ("NUM($errors) PL_N(error)"),
-        inflect (sprintf ("NUM(%d) PL_N(ticket)", scalar @tickets)));
-    $logger->info ($text);
-    return $text if $errors;
-    return "$errors errors" if $errors;
-    return;
-}
-
 
 ##############################################################################
 ### Final Documentation ######################################################
@@ -573,7 +364,7 @@ sub _run_on_tickets {
 
 =head1 REQUIREMENTS
 
-B<Class::Struct>, B<Remedy::Form>
+B<Class::Struct>, B<Remedy::Form>, B<Remedy::Form::Incident>
 
 =head1 SEE ALSO
 

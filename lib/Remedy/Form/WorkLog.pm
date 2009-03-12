@@ -4,27 +4,30 @@ our $VERSION = "0.12";
 
 =head1 NAME
 
-Remedy::Worklog - per-ticket worklogs
+Remedy::Form::Worklog - per-incident worklogs
 
 =head1 SYNOPSIS
 
-    use Remedy::Worklog;
+    use Remedy::Form::Worklog;
 
     # $remedy is a Remedy object
-    my @worklog = Remedy::WorkLog->read ('db' => $remedy, 
-        'PARENT' => 'INC000000002371');
-    for my $entry (@worklog) { print scalar $entry->print_text }
+    foreach my $worklog ($remedy->read ('worklog', 'PARENT' => 
+        'INC000000002371')) {
+        print scalar $entry->print_text 
+    }
 
 =head1 DESCRIPTION
 
-Stanfor::Remedy::Unix::WorkLog tracks individual work log entries for tickets as part
-of the remedy database.  It is a sub-class of B<Stanford::Packages::Form>, so
-most of its functions are described there.
+Remedy::Form::WorkLog manages the I<HPD:WorkLog> form in Remedy, which tracks  
+emails and staff interaction with a given incident.                            
+
+Remedy::Form::WorkLog is a sub-class of B<Remedy::Form>, registered as
+I<worklog>.
 
 =cut
 
 ##############################################################################
-### Declarations
+### Declarations #############################################################
 ##############################################################################
 
 use strict;
@@ -36,7 +39,7 @@ our @ISA = init_struct (__PACKAGE__);
 Remedy::Form->register ('worklog', __PACKAGE__);
 
 ##############################################################################
-### Class::Struct
+### Class::Struct ############################################################
 ##############################################################################
 
 =head1 FUNCTIONS
@@ -47,47 +50,72 @@ These
 
 =over 4
 
-=item attach1, attach2, attach3, attach4, attach5 ($)
+=item id (I<Work Log ID>)
+
+=item attach1 (I<z2AF Work Log01>)
+
+=item attach2 (I<z2AF Work Log01>)
+
+=item attach3 (I<z2AF Work Log01>)
+
+=item attach4 (I<z2AF Work Log01>)
+
+=item attach5 (I<z2AF Work Log01>)
 
 These list the five possible attachments per-worklog-entry.  Not yet well
-supported.  These correspond to fields 'z2AF Work Log01' to 'zaAF Work Log 05'.
+supported.  
 
-=item date_submit ($)
+=item date_submit (I<Work Log Submit Date>)
 
-The date that the worklog was created.  Corresponds to field 
+The date that the worklog was created.
 
-=item description ($)
+=item description (I<Description>)
 
-=item details ($)
+=item details (I<Detailed Description>)
 
-=item id ($)
+=item number (I<Incident Number>)
 
-=item number ($)
+Incident number of the original ticket.
 
-Incident number of the original ticket.  Corresponds to field 'Incident Number'.
+=item submitter (I<Work Log Submitter>
 
-=item map (%)
+Address of the person who created this worklog entry.
 
-=item parent ($)
+=item time_spent (I<Total Time Spent>)
 
-=item submitter ($)
+In minutes.
 
-Address of the person who created this worklog entry.  Corresponds to field
-'Work Log Submitter'.
+=item type (I<Work Log Type>)
 
 =back
 
 =cut
 
+sub field_map { 
+    'id'                    => 'Work Log ID',
+    'attach1'               => 'z2AF Work Log01',
+    'attach2'               => 'z2AF Work Log02',
+    'attach3'               => 'z2AF Work Log03',
+    'attach4'               => 'z2AF Work Log04',
+    'attach5'               => 'z2AF Work Log05',
+    'date_submit'           => 'Work Log Submit Date',
+    'description'           => 'Description',
+    'details'               => 'Detailed Description',
+    'number'                => 'Incident Number',
+    'submitter'             => 'Work Log Submitter',
+    'time_spent'            => 'Total Time Spent',
+    'type'                  => 'Work Log Type',
+}
+
 ##############################################################################
-### Local Functions 
+### Local Functions ##########################################################
 ##############################################################################
 
 =head2 Local Functions
 
 =over 4
 
-=item attachments 
+=item attachments ()
 
 Lists the names of the attachments connected with this worklog, separated with
 semicolons, or 'none' if there are none.
@@ -108,43 +136,29 @@ sub attachments {
     return scalar @list ? join ("; ", @list) : "none";
 }
 
-=head2 B<Remedy::Form Overrides>
-
-=over 4
-
-=item field_map
+=back
 
 =cut
 
-sub field_map { 
-    'id'                    => 'Work Log ID',
-    'description'           => 'Description',
-    'details'               => 'Detailed Description',
-    'date_submit'           => 'Work Log Submit Date',
-    'submitter'             => 'Work Log Submitter',
-    'number'                => 'Incident Number',
-    'type'                  => 'Work Log Type',
-    'time_spent'            => 'Total Time Spent',
-    'attach1'               => 'z2AF Work Log01',
-    'attach2'               => 'z2AF Work Log02',
-    'attach3'               => 'z2AF Work Log03',
-    'attach4'               => 'z2AF Work Log04',
-    'attach5'               => 'z2AF Work Log05',
-}
+##############################################################################
+### Remedy::Form Overrides ###################################################
+##############################################################################
 
-=item limit (ARGHASH)
+=head2 B<Remedy::Form> Overrides
 
-Takes the following arguments:
+=over 4
+
+=item field_map ()
+
+=item limit_pre (ARGHASH)
 
 =over 4
 
 =item PARENT I<number>
 
-If set, then we will just search based on the Incident Number field.
+If set, then we will just search based on the I<Incident Number> field.
 
 =back
-
-Defaults to B<limit_basic ()>.
 
 =cut
 
@@ -157,15 +171,14 @@ sub limit_pre {
     return %args;
 }
 
-=item print_text ()
+=item print ()
 
-Returns a short list of the salient points of the worklog entry - the
-submitter, the submission date, the short description, and the actual text of
-the worklog.
+Formats information about the worklog entry, including the submitter, the
+submission date, the short description, and the actual text of the worklog.
 
 =cut
 
-sub print_text {
+sub print {
     my ($self, %args) = @_;
 
     my @return = $self->format_text_field (
@@ -185,8 +198,6 @@ sub print_text {
 
 =item table ()
 
-'HPD:WorkLog'
-
 =cut
 
 sub table { 'HPD:WorkLog' }
@@ -195,9 +206,14 @@ sub table { 'HPD:WorkLog' }
 
 =cut
 
-###############################################################################
-### Final Documentation
-###############################################################################
+##############################################################################
+### Final Documentation ######################################################
+##############################################################################
+
+=head1 TODO
+
+Figure out a way to actaully extract the attachments, and present them in a
+reasonable manner.
 
 =head1 REQUIREMENTS
 
