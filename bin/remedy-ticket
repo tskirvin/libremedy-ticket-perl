@@ -206,6 +206,21 @@ if      ($query eq 'ticket') {
         exit 0;
     }
     
+} elsif ($query eq 'time_spent') { 
+    my ($number, $mins) = @rest;
+    error_usage ('no ticket number') unless $number;
+    error_usage ('must set at least 1 minute') unless $mins;
+
+    $logger->info ("adding $mins minutes to $number");
+    if (my $return = $remedy->time_add ($number, $mins)) {
+        $logger->warn ("failed to add time to $number: $return");
+        exit 1;
+    } else {
+        $logger->warn ("added time to $number");
+        print scalar $remedy->text ($number, 'summary');
+        exit 0;
+    }
+    
 
 } elsif ($query eq 'status') {
     my ($number, $status) = @rest;
@@ -225,6 +240,7 @@ if      ($query eq 'ticket') {
 
 } elsif ($query eq 'resolve') {
     my ($number, $text) = @rest;
+    error_usage ('no ticket number') unless $number;
     error_usage ('no text offered for resolution') unless $text;
 
     my %extra = ('timespent' => $TIME,
