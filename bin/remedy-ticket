@@ -10,7 +10,7 @@
 # use lib '/FULL/PATH/TO/PERL/MODULES';
 # use lib "/afs/ir/users/t/s/tskirvin/private/work/remedy/libremedy-perl/lib";
 # use lib "/afs/ir/users/t/s/tskirvin/private/work/remedy/Stanford-Remedy/lib";
-# use lib "/afs/ir/users/t/s/tskirvin/private/work/remedy/libremedy-ticket-perl/lib";
+use lib "/afs/ir/users/t/s/tskirvin/private/work/remedy/libremedy-ticket-perl/lib";
 
 ## Number of days to go back for the 'unresolved' search. 
 our $DAYS = 0;
@@ -233,15 +233,23 @@ if      ($query eq 'ticket') {
     
 
 } elsif ($query eq 'status') {
-    my ($number, $status) = @rest;
+    my ($number, $status, $reason) = @rest;
     error_usage ('no ticket number')  unless $number;
     error_usage ('no status offered') unless $status;
+
+    my %extra = ('user' => $USER || $DEFAULT_USER);
     
-    $logger->info ("setting status of $number to '$status'");
-    if (my $error = $remedy->set_status ($number, $status)) {
-        print "failed to set status of $number to $status: $error";
-        my $values = join (", ", $remedy->values ('Incident', 'Status'));
-        print "valid status values: $values\n";
+    $logger->info ("setting status of $number to '$status' because '$reason'");
+    if (my $error = $remedy->set_status ($number, $status, $reason, %extra)) {
+        print "failed to set status of $number to $status: $error\n";
+        print "valid status values\n";
+        foreach (sort $remedy->values ('Incident', 'Status')) { 
+            print "  * $_\n";
+        }
+        print "valid status reason reasons:\n";
+        foreach (sort $remedy->values ('Incident', 'Status_Reason')) { 
+            print "  * $_\n";
+        }
         exit 1;
     } else {
         print scalar $remedy->text ($number, 'primary');

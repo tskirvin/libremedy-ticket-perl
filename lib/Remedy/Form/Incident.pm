@@ -143,7 +143,7 @@ sub assign  {
     my %toset;
 
     my $group = $args{'group'};
-    $group ||= $self->get ('Owner Group');
+    $group ||= $self->get ('Assigned Group');
     return 'no known group' unless $group;
 
     $logger->debug ("pulling support group information about '$group'");
@@ -203,8 +203,7 @@ B<time_add()>.
 
 =item user I<USER>
 
-If offered, and this ticket is not currently assigned, we will assign the 
-ticket to this user before we resolve the ticket.
+Assed through to B<set_status ()>.
 
 =back
 
@@ -218,26 +217,48 @@ sub resolve {
     if (my $time = $args{'timespent'}) { 
         $self->time_add ($time, $user);
     }
-    $self->assign ('user' => $user) if ($user && !$self->assignee);
 
     return $self->set_status ('Resolved',
-        'Status_Reason'   => "No Further Action Required", 
+        'No Further Action Required',
         'Resolution'      => $text, 
+        'user'            => $user,
         'Estimated Resolution Date' => $args{'time'} || time);
 }
 
-=item set_status (STATUS)
+=item set_status (STATUS, REASON)
 
 Sets the status of the incident to the offered I<STATUS>.  Note that we do not
 check to see whether the status is valid at this step; this will happen when we
 try to save the ticket.
 
+Arguments we accept through I<ARGHASH> (all optional):
+
+=over 4
+
+=item user I<USER>
+
+If offered, and this ticket is not currently assigned, we will assign the 
+ticket to this user before we update the ticket.  
+
+=back
+
 =cut
 
 sub set_status {
-    my ($self, $status, @extra) = @_;
+    my ($self, $status, $reason, %args) = @_;
     return 'no status offered' unless $status;
-    return $self->set ('Status' => $status, @extra);
+
+    if (my $user = $args{'user'} && !$self->assignee) {
+        my $error = $self->assign ('user' => $user);
+        return $error if $error;
+    }
+    delete $args{'user'};
+
+    return "invalid status value: '$status'" 
+        if $self->set ('Status' => $status);
+    return "invalid status reason: '$reason'"
+        if $self->set ('Status_Reason' => $reason);
+    return $self->set (%args);
 }
 
 =item time_add (TIME [, USER])

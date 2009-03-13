@@ -197,18 +197,20 @@ sub run_on_tickets {
     return;
 }
 
-=item set_status (NUMBER, STATUS)
+=item set_status (NUMBER, STATUS, REASON)
 
 Sets the status of ticket I<NUMBER> to I<STATUS>.  Note that we do no
-error-checking on whether this is a valid status.  Uses B<run_on_tickets ()>.
+error-checking on whether this is a valid status.  I<REASON>, if offered, is
+also passed (it is required for some status types).  Uses B<run_on_tickets ()>.
 
 =cut
 
 sub set_status { 
-    my ($self, $number, $status, @rest) = @_;
+    my ($self, $number, $status, $reason, @rest) = @_;
     return "no ticket number" unless $number;
     return "no status offered" unless $status;
-    return $self->run_on_tickets ('set_status', $number, $status, @rest);
+    return $self->run_on_tickets ('set_status', $number, $status, 
+        $reason, @rest);
 }
 
 =item text (NUMBER [, TYPE])
