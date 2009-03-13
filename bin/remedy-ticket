@@ -129,11 +129,16 @@ if      ($query eq 'ticket') {
             push @text, "submitted by '$USER'";
         }
 
-    } elsif ($type eq '5day') {
+    } elsif ($type =~ /^(\d+)day$/) {
         $hash{'status'} = 'open';
         $USER ||= $DEFAULT_USER;
-        $DAYS ||= 5;
-        push @text, "5 day report";
+
+        my $days = $1 || 5;
+        $hash{'submit_before'} = time - $days * 86400;
+        push @text, "$days day report";
+
+        # this is a hack, eventually move into main module
+        $hash{'extra'} = qq/('700000048' = \$--1\$ OR '700000048' != "Project" AND '700000048' != "Order")/;
 
     } elsif ($type eq 'unresolved') { 
         $hash{'status'} = 'open';
@@ -159,12 +164,14 @@ if      ($query eq 'ticket') {
         foreach (@return) { push @groups, $_->groups }
 
         if (scalar @groups) {
-            push @text, "in all member groups of '$USER'";
+            push @text, "in ${USER}'s member groups";
             $hash{'groups'} = \@groups;
         }
     }
 
-    $logger->info (sprintf ("finding %s", join (", ", @text)));
+    my $string = sprintf ("list: %s", join (", ", @text));
+    $logger->info ($string);
+    print "$string\n";
     foreach my $tkt ($remedy->read ('ticket', %hash)) { 
         print scalar $tkt->print ('short');
     }
@@ -414,7 +421,7 @@ For searches, what username are we searching for?
 
 =back
 
-=head1 EXAMPLES
+=head1 ARGUMENTS
 
 =over 4
 
@@ -476,8 +483,8 @@ Valid types (along with the argument that they take, from I<ARGS>):
 
 =item 5day
 
-The '5-day report' - shows open tickets that haven't been modified in 5 days
-and are in groups associated with I<USER>.
+The '5-day report' - shows open tickets that were created >5 days before, 
+in groups associated with I<USER>, and excluding Projects and Orders.
 
 =item all
 
