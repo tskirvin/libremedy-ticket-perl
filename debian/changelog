@@ -5,8 +5,10 @@ libremedy-ticket-perl (0.2) intrepid UNRELEASED; urgency=low
   * Incident.pm now looks for 'assigned_groups' in limit_pre ().
   * remedy-ticket now can pass 'assigned_groups' properly.
   * remedy-ticket user searching fixes.
+  * updated the short list formatting in Incident::text_short ().
+  * remedy-ticket now accepts just a ticket number as an argument
 
- -- Tim Skirvin <tskirvin@stanford.edu>  Thu, 12 Mar 2009 13:30:29 -0700
+ -- Tim Skirvin <tskirvin@stanford.edu>  Fri, 13 Mar 2009 12:39:19 -0700
 
 libremedy-ticket-perl (0.1) intrepid UNRELEASED; urgency=low
 

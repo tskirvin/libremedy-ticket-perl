@@ -530,7 +530,7 @@ sub text_short {
     my $create = $self->date_submit;
 
     my @return;
-    push @return, sprintf ("%-8s   %-8s   %-8s   %-32s  %12s", 
+    push @return, sprintf ("%-8s  %-13.13s  %-8s %-32s %12s", 
         $number, $request, $assign, $group, $self->status || '(not set)');
     push @return, sprintf ("  Created: %s   Updated: %s", $create, $update);
     push @return, sprintf ("  Summary: %s", $summary);

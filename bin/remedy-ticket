@@ -85,6 +85,16 @@ if      ($query eq 'ticket') {
     print scalar $remedy->text ($number, $type);
     exit 0;
 
+# like 'ticket', but without that specific name; don't document
+} elsif ($query =~ /\d+$/) { 
+    my ($type) = @rest;
+    my $number = $query;
+    $type ||= $DEFAULT{lc $query};
+    $logger->info (sprintf ("text (%s, %s)", $number, $type || '(default)'));
+    print scalar $remedy->text ($number, $type);
+    exit 0;
+    
+
 } elsif ($query eq 'list') { 
     my ($type, $user, @extra) = @rest;
     $type ||= $DEFAULT{$query};
@@ -161,7 +171,7 @@ if      ($query eq 'ticket') {
     exit 0;
 
 
-} elsif ($query eq 'assign') { 
+} elsif ($query eq 'assign' || $query eq 'assigned') { 
     my ($number) = @rest;
     error_usage ('no ticket number') unless $number;
 
