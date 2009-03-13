@@ -339,6 +339,20 @@ sub ticket_type {
     else                        { return 'unknown'  } 
 }
 
+=item time_spent (NUMBER, MINUTES)
+
+Adds I<MINUTES> minutes of work to ticket I<NUMBER>, using B<run_on_tickets
+()>.
+
+=cut
+
+sub time_add {
+    my ($self, $number, $mins, @rest) = @_;
+    return "no ticket number" unless $number;
+    return "invalid number of minutes" unless $mins > 0;
+    return $self->run_on_tickets ('time_add', $number, $mins, @rest);
+}
+
 =item unassign (NUMBER)
 
 "Unassigns" a ticket, which means clearing the user field and sending it back

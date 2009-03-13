@@ -748,9 +748,7 @@ sub field_map {
 
 =over 4
 
-=item limit_pre ()
-
-[...]
+=item limit_pre (ARGHASH)
 
 =over 4
 
@@ -768,7 +766,32 @@ We are just looking for I<Incident Number> I<NUMBER>.
 
 =item groups
 
+Takes an arrayref of group names that we'll search the 'Assigned Group' field
+for.  
+
 =item status
+
+The status of the ticket.  Does different things by value:
+
+=over 2
+
+=item open
+
+Less than I<Resolved>.
+
+=item closed
+
+I<Resolved> or greater.
+
+=item (other)
+
+Just passed to the 'Status' field directly.
+
+=back
+
+=item assigned_group 
+
+Only search for the assigned group.
 
 =item assigned_user
 
@@ -818,14 +841,14 @@ sub limit_pre {
             }
             push @extra, ('(' . join (" OR ", @list) . ')')
                 if scalar @list;
+            delete $args{'groups'};
         }
     }
 
-    # Don't forget 'Incident Type' and a simple "only give me tasks" option
-
-#('Assigned Group*+' = "ITS Unix Systems" OR 'Assigned Group*+' = [...])
-#AND ('Status*' = "Assigned" OR 'Status*' OR [...]) 
-#AND ('Last Modified Date' <= $DATE$  (5*60*24*60)) AND ('Incident Type*' = "Request")
+    if (my $group = $args{'assigned_group'}) { 
+        $args{'Assigned Group'} = $group;
+        delete $args{'assigned_group'} ;
+    }
 
     if (my $status = lc $args{'status'}) { 
         if    ($status eq 'open')   { $args{'Status'} = '-Resolved'     }
@@ -894,7 +917,8 @@ sub table { 'HPD:Help Desk' }
 
 =head1 REQUIREMENTS
 
-B<Remedy::Ticket>, B<Class::Struct>, B<Remedy::Form>
+B<Remedy::Ticket>, B<Class::Struct>, B<Remedy::Form>, Form::Audit>,
+B<Remedy::B<Remedy::Form::TicketGen>, B<Remedy::Form::WorkLog>
 
 =head1 SEE ALSO
 

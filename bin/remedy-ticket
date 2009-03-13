@@ -94,9 +94,9 @@ if      ($query eq 'ticket') {
 
     $user ||= $USER || $DEFAULT_USER;
 
-    $hash{'user'}   = $USER   if defined $USER;
-    $hash{'group'}  = $GROUP  if defined $GROUP;
-    $hash{'status'} = $STATUS if defined $STATUS;
+    $hash{'user'}            = $USER   if defined $USER;
+    $hash{'assigned_group'}  = $GROUP  if defined $GROUP;
+    $hash{'status'}          = $STATUS if defined $STATUS;
 
     if      ($type eq 'all') {
         
@@ -140,16 +140,16 @@ if      ($query eq 'ticket') {
         push @text, "unmodified for $DAYS days";
     }
 
-    if ($USER) { 
-        my %person_search = ('SUNET ID' => $user);
+    if ($USER && !$GROUP) { 
+        my %person_search = ('SUNET ID' => $USER);
         my @return = $remedy->read ('people', %person_search);
-        $logger->logdie ("user '$user' does not belong to any groups")
+        $logger->logdie ("user '$USER' does not belong to any groups")
             unless scalar @return;
         my @groups;
         foreach (@return) { push @groups, $_->groups }
 
         if (scalar @groups) {
-            push @text, "in all member groups of '$user'";
+            push @text, "in all member groups of '$USER'";
             $hash{'groups'} = \@groups;
         }
     }
