@@ -1,8 +1,9 @@
 libremedy-ticket-perl (0.3) UNRELEASED; urgency=low
 
   * set_status now requires a reason in most cases
+  * 'pending' type in remedy-ticket
 
- -- Tim Skirvin <tskirvin@stanford.edu>  Fri, 13 Mar 2009 13:14:09 -0700
+ -- Tim Skirvin <tskirvin@stanford.edu>  Fri, 13 Mar 2009 13:25:30 -0700
 
 libremedy-ticket-perl (0.2) intrepid UNRELEASED; urgency=low
 

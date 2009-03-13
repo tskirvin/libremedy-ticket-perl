@@ -10,7 +10,7 @@
 # use lib '/FULL/PATH/TO/PERL/MODULES';
 # use lib "/afs/ir/users/t/s/tskirvin/private/work/remedy/libremedy-perl/lib";
 # use lib "/afs/ir/users/t/s/tskirvin/private/work/remedy/Stanford-Remedy/lib";
-use lib "/afs/ir/users/t/s/tskirvin/private/work/remedy/libremedy-ticket-perl/lib";
+# use lib "/afs/ir/users/t/s/tskirvin/private/work/remedy/libremedy-ticket-perl/lib";
 
 ## Number of days to go back for the 'unresolved' search. 
 our $DAYS = 0;
@@ -239,7 +239,7 @@ if      ($query eq 'ticket') {
 
     my %extra = ('user' => $USER || $DEFAULT_USER);
     
-    $logger->info ("setting status of $number to '$status' because '$reason'");
+    $logger->info ("setting status of $number to '$status'");
     if (my $error = $remedy->set_status ($number, $status, $reason, %extra)) {
         print "failed to set status of $number to $status: $error\n";
         print "valid status values\n";
@@ -256,10 +256,31 @@ if      ($query eq 'ticket') {
         exit 0;
     }
 
+} elsif ($query eq 'pending') {
+    my ($number, $reason) = @rest;
+    error_usage ('no ticket number') unless $number;
+    error_usage ('no reason offered') unless $reason;
+
+    my %extra = ('user'      => $USER || $DEFAULT_USER);
+    $logger->info ("setting '$number' to pending, with reason '$reason'");
+    if (my $error = $remedy->set_status ($number, 'Pending', $reason, 
+        %extra)) {
+        print "failed to set status of $number to 'Pending': $error\n";
+        print "valid status reason reasons:\n";
+        foreach (sort $remedy->values ('Incident', 'Status_Reason')) { 
+            print "  * $_\n";
+        }
+    } else {
+        print scalar $remedy->text ($number, 'primary');
+        exit 0;
+    }
+    
+
 } elsif ($query eq 'resolve') {
     my ($number, $text) = @rest;
     error_usage ('no ticket number') unless $number;
     error_usage ('no text offered for resolution') unless $text;
+
 
     my %extra = ('timespent' => $TIME,
                  'user'      => $USER || $DEFAULT_USER);
@@ -334,6 +355,8 @@ B<remedy-ticket> ticket I<NUMBER>
 B<remedy-ticket> assign I<NUMBER> (--user I<USER>|--group I<GROUP>)
 
 B<remedy-ticket> list I<TYPE> I<ARGS>
+
+B<remedy-ticket> pending I<NUMBER> I<REASON>
 
 B<remedy-ticket> resolve I<NUMBER> I<TEXT>
 
@@ -502,6 +525,11 @@ Note that this is overridden
 Only show tickets in the group I<GROUP>.
 
 =back
+
+=item B<remedy-ticket> pending I<NUMBER> I<REASON>
+
+Sets the ticket I<NUMBER> to status 'Pending', with reason I<REASON>.  The list
+of valid reasons is offered if an invalid one is chosen.
 
 =item B<remedy-ticket> resolve I<NUMBER> I<TEXT> [--time I<TIME>] [--user I<USER>]
 
