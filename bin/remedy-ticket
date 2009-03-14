@@ -12,7 +12,7 @@
 # use lib "/afs/ir/users/t/s/tskirvin/private/work/remedy/Stanford-Remedy/lib";
 # use lib "/afs/ir/users/t/s/tskirvin/private/work/remedy/libremedy-ticket-perl/lib";
 
-## Number of days to go back for the 'unresolved' search. 
+## Number of days to go back for the 'unresolved' search.  0 means no limit.
 our $DAYS = 0;
 
 ## Print debugging information?  Set with '--debug', can be set many times
@@ -29,6 +29,22 @@ our $DEFAULT_USER = $ENV{'REMOTE_USER'} || $ENV{'USER'} || "unknown";
 our %DEFAULT = (
     'ticket' => '',
     'list'   => 'assign',
+);
+
+## Different query types, so we can split them off into sub-routines for 
+## maintainability
+our %QUERY = (
+    'assign'        => \&assign,
+    'assigned'      => \&assign,
+    'help'          => \&help,
+    'list'          => \&list,
+    'pending'       => \&pending,
+    'resolve'       => \&resolve,
+    'status'        => \&status,
+    'set_status'    => \&set_status,
+    'ticket'        => \&ticket,
+    'time_spent'    => \&time_spent,
+    'worklog'       => \&worklog,
 );
 
 ## Default ticket status for searching.
@@ -57,7 +73,7 @@ use vars qw/$USER $GROUP/;
 ### main () ##################################################################
 ##############################################################################
 
-my $logger = Remedy::Log->get_logger;
+our $LOGGER = Remedy::Log->get_logger;
 
 my $parser = new Getopt::Long::Parser;
 my $result = $parser->getoptions (
@@ -70,32 +86,77 @@ my $result = $parser->getoptions (
     'man'           => sub { pod2usage (-verbose => 2, -noperldoc => 1) },
     'h|help'        => sub { pod2usage (-verbose => 1) }) || error_usage ();
 
-my $remedy = eval { Remedy::Ticket->connect ('debug' => $DEBUG) }
-    or $logger->logdie ("couldn't connect to database: $@");
-$logger->logdie ($@) if $@;
+our $REMEDY = eval { Remedy::Ticket->connect ('debug' => $DEBUG) }
+    or $LOGGER->logdie ("couldn't connect to database: $@");
+$LOGGER->logdie ($@) if $@;
 
 my ($query, @rest) = @ARGV;
 $query ||= '(none)';
 $query = lc $query;
 
-if      ($query eq 'ticket') { 
-    my ($number, $type) = @rest;
-    $type ||= $DEFAULT{lc $query};
-    $logger->info (sprintf ("text (%s, %s)", $number, $type || '(default)'));
-    print scalar $remedy->text ($number, $type);
-    exit 0;
+# if we just get a ticket number as the query, display it with ticket ()
+if ($query =~ /\d+$/) { 
+    unshift @rest, $query;
+    $query = 'ticket';
+}
 
-# like 'ticket', but without that specific name; don't document
-} elsif ($query =~ /\d+$/) { 
-    my ($type) = @rest;
-    my $number = $query;
-    $type ||= $DEFAULT{lc $query};
-    $logger->info (sprintf ("text (%s, %s)", $number, $type || '(default)'));
-    print scalar $remedy->text ($number, $type);
-    exit 0;
-    
+error_usage ("invalid query type: '$query'") unless my $cmd = $QUERY{$query};
+exit $cmd->(@rest);
 
-} elsif ($query eq 'list') { 
+##############################################################################
+### Subroutines ##############################################################
+##############################################################################
+
+### assign (NUMBER)
+# Assigns a ticket.  Must have either $USER or $GROUP set.
+sub assign {
+    my ($number) = @rest;
+    error_usage ('no ticket number') unless $number;
+
+    my (%args, @text);
+    if (defined $GROUP) { 
+        $args{'group'} = $GROUP;
+        push @text, "group $GROUP";
+    }
+
+    if (defined $USER) { 
+        if ($USER) { 
+            $args{'user'} = $USER;
+            push @text, "user $USER";
+        } else {
+            $args{'user'} = undef;
+            push @text, "no user";
+        }
+    } 
+    error_usage ('no assignee information') unless scalar @text;
+    my $text = join (', ', @text);;
+
+    $LOGGER->info ("assigning $number to $text");
+    if (my $return = $REMEDY->assign ($number, %args)) {
+        $LOGGER->warn ("failed to assign $number: $return");
+        exit 1;
+    } else {
+        $LOGGER->warn ("assigned $number to $text");
+        print scalar $REMEDY->text ($number, 'assign');
+        exit 0;
+    }
+}
+
+### error_usage (ERROR)
+# Exit out with pod2usage
+sub error_usage { 
+    my ($error) = @_;
+    $LOGGER->error ($error);
+    pod2usage (-exit_status => 2, -verbose => 1);
+}
+
+### help ()
+# Exits with pod2usage ().
+sub help { pod2usage (-verbose => 2, -exit_status => 0, -noperldoc => 1) }
+
+### list (TYPE, USER, EXTRA)
+# 
+sub list {
     my ($type, $user, @extra) = @rest;
     $type ||= $DEFAULT{$query};
     $type = lc $type;
@@ -157,8 +218,8 @@ if      ($query eq 'ticket') {
 
     if ($USER && !$GROUP) { 
         my %person_search = ('SUNET ID' => $USER);
-        my @return = $remedy->read ('people', %person_search);
-        $logger->logdie ("user '$USER' does not belong to any groups")
+        my @return = $REMEDY->read ('people', %person_search);
+        $LOGGER->logdie ("user '$USER' does not belong to any groups")
             unless scalar @return;
         my @groups;
         foreach (@return) { push @groups, $_->groups }
@@ -170,121 +231,18 @@ if      ($query eq 'ticket') {
     }
 
     my $string = sprintf ("list: %s", join (", ", @text));
-    $logger->info ($string);
+    $LOGGER->info ($string);
     print "$string\n";
-    foreach my $tkt ($remedy->read ('ticket', %hash)) { 
+    foreach my $tkt ($REMEDY->read ('ticket', %hash)) { 
         print scalar $tkt->print ('short');
     }
     exit 0;
+}
 
-
-} elsif ($query eq 'assign' || $query eq 'assigned') { 
-    my ($number) = @rest;
-    error_usage ('no ticket number') unless $number;
-
-    my (%args, @text);
-    if (defined $GROUP) { 
-        $args{'group'} = $GROUP;
-        push @text, "group $GROUP";
-    }
-
-    if (defined $USER) { 
-        if ($USER) { 
-            $args{'user'} = $USER;
-            push @text, "user $USER";
-        } else {
-            $args{'user'} = undef;
-            push @text, "no user";
-        }
-    } 
-    error_usage ('no assignee information') unless scalar @text;
-    my $text = join (', ', @text);;
-
-    $logger->info ("assigning $number to $text");
-    if (my $return = $remedy->assign ($number, %args)) {
-        $logger->warn ("failed to assign $number: $return");
-        exit 1;
-    } else {
-        $logger->warn ("assigned $number to $text");
-        print scalar $remedy->text ($number, 'assign');
-        exit 0;
-    }
-
-} elsif ($query eq 'unassign') {
-    my ($number) = @rest;
-    error_usage ('no ticket number') unless $number;
-
-    if (my $return = $remedy->unassign ($number)) {
-        $logger->warn ("failed to unassign $number: $return");
-        exit 1;
-    } else {
-        $logger->warn ("unassigned $number");
-        print scalar $remedy->text ($number, 'assign');
-        exit 0;
-    }
-    
-} elsif ($query eq 'time_spent') { 
-    my ($number, $mins) = @rest;
-    error_usage ('no ticket number') unless $number;
-    error_usage ('must set at least 1 minute') unless $mins;
-
-    $logger->info ("adding $mins minutes to $number");
-    if (my $return = $remedy->time_add ($number, $mins)) {
-        $logger->warn ("failed to add time to $number: $return");
-        exit 1;
-    } else {
-        $logger->warn ("added time to $number");
-        print scalar $remedy->text ($number, 'summary');
-        exit 0;
-    }
-    
-
-} elsif ($query eq 'status') {
-    my ($number, $status, $reason) = @rest;
-    error_usage ('no ticket number')  unless $number;
-    error_usage ('no status offered') unless $status;
-
-    my %extra = ('user' => $USER || $DEFAULT_USER);
-    
-    $logger->info ("setting status of $number to '$status'");
-    if (my $error = $remedy->set_status ($number, $status, $reason, %extra)) {
-        print "failed to set status of $number to $status: $error\n";
-        print "valid status values\n";
-        foreach (sort $remedy->values ('Incident', 'Status')) { 
-            print "  * $_\n";
-        }
-        print "valid status reason reasons:\n";
-        foreach (sort $remedy->values ('Incident', 'Status_Reason')) { 
-            print "  * $_\n";
-        }
-        exit 1;
-    } else {
-        print scalar $remedy->text ($number, 'primary');
-        exit 0;
-    }
-
-} elsif ($query eq 'pending') {
-    my ($number, $reason) = @rest;
-    error_usage ('no ticket number') unless $number;
-    error_usage ('no reason offered') unless $reason;
-
-    my %extra = ('user'      => $USER || $DEFAULT_USER);
-    $logger->info ("setting '$number' to pending, with reason '$reason'");
-    if (my $error = $remedy->set_status ($number, 'Pending', $reason, 
-        %extra)) {
-        print "failed to set status of $number to 'Pending': $error\n";
-        print "valid status reason reasons:\n";
-        foreach (sort $remedy->values ('Incident', 'Status_Reason')) { 
-            print "  * $_\n";
-        }
-    } else {
-        print scalar $remedy->text ($number, 'primary');
-        exit 0;
-    }
-    
-
-} elsif ($query eq 'resolve') {
-    my ($number, $text) = @rest;
+### resolve (NUMBER, TEXT)
+#
+sub resolve {
+    my ($number, $text) = @_;
     error_usage ('no ticket number') unless $number;
     error_usage ('no text offered for resolution') unless $text;
 
@@ -292,22 +250,119 @@ if      ($query eq 'ticket') {
     my %extra = ('timespent' => $TIME,
                  'user'      => $USER || $DEFAULT_USER);
     
-    $logger->info ("resolving '$number'");
-    if (my $error = $remedy->resolve ($number, $text, %extra)) {
-        $logger->warn ("failed to resolve $number: $error");
+    $LOGGER->info ("resolving '$number'");
+    if (my $error = $REMEDY->resolve ($number, $text, %extra)) {
+        $LOGGER->warn ("failed to resolve $number: $error");
         exit 1;
     } else {
         print "Resolved '$number'\n";
-        print scalar $remedy->text ($number);
+        print scalar $REMEDY->text ($number);
+        exit 0;
+    }
+}
+
+sub pending {
+    my ($number, $reason) = @_;
+    error_usage ('no ticket number') unless $number;
+    error_usage ('no reason offered') unless $reason;
+
+    my %extra = ('user'      => $USER || $DEFAULT_USER);
+    $LOGGER->info ("setting '$number' to pending, with reason '$reason'");
+    if (my $error = $REMEDY->set_status ($number, 'Pending', $reason, 
+        %extra)) {
+        print "failed to set status of $number to 'Pending': $error\n";
+        print "valid status reason reasons:\n";
+        foreach (sort $REMEDY->values ('Incident', 'Status_Reason')) { 
+            print "  * $_\n";
+        }
+    } else {
+        print scalar $REMEDY->text ($number, 'primary');
+        exit 0;
+    }
+}
+
+### status (NUMBER, STATUS, REASON)
+#
+sub status {
+    my ($number, $status, $reason) = @_;
+    error_usage ('no ticket number')  unless $number;
+    error_usage ('no status offered') unless $status;
+
+    my %extra = ('user' => $USER || $DEFAULT_USER);
+    
+    $LOGGER->info ("setting status of $number to '$status'");
+    if (my $error = $REMEDY->set_status ($number, $status, $reason, %extra)) {
+        print "failed to set status of $number to $status: $error\n";
+        print "valid status values\n";
+        foreach (sort $REMEDY->values ('Incident', 'Status')) { 
+            print "  * $_\n";
+        }
+        print "valid status reason reasons:\n";
+        foreach (sort $REMEDY->values ('Incident', 'Status_Reason')) { 
+            print "  * $_\n";
+        }
+        exit 1;
+    } else {
+        print scalar $REMEDY->text ($number, 'primary');
+        exit 0;
+    }
+}
+
+### ticket (NUMBER, TYPE)
+#
+sub ticket {
+    my ($number, $type) = @_;
+    error_usage ('no ticket number') unless $number;
+    $type ||= $DEFAULT{'ticket'};
+    $LOGGER->info (sprintf ("text (%s, %s)", $number, $type || '(default)'));
+    print scalar $REMEDY->text ($number, $type);
+    return;
+}
+
+### time_spent (NUMBER, MINS)
+sub time_spent {
+    my ($number, $mins) = @_;
+    error_usage ('no ticket number') unless $number;
+    error_usage ('must set at least 1 minute') unless $mins;
+
+    $LOGGER->info ("adding $mins minutes to $number");
+    if (my $return = $REMEDY->time_add ($number, $mins)) {
+        $LOGGER->warn ("failed to add time to $number: $return");
+        exit 1;
+    } else {
+        $LOGGER->warn ("added time to $number");
+        print scalar $REMEDY->text ($number, 'summary');
         exit 0;
     }
 
-} elsif (lc $query eq 'worklog') { 
-    my ($number, $text) = @rest;
+    return;
+}
 
-    $logger->info ("Adding worklog information to ticket $number");
-    my @tickets = $remedy->get ($number);
-    $logger->logdie ("no matching tickets: '$number'") unless scalar @tickets;
+### unassign (NUMBER)
+#
+sub unassign {
+    my ($number) = @_;
+    error_usage ('no ticket number') unless $number;
+
+    if (my $return = $REMEDY->unassign ($number)) {
+        $LOGGER->warn ("failed to unassign $number: $return");
+        exit 1;
+    } else {
+        $LOGGER->warn ("unassigned $number");
+        print scalar $REMEDY->text ($number, 'assign');
+        exit 0;
+    }
+}
+
+### worklog (NUMBER, TEXT)
+# Creates a worklog for ticket NUMBER with the text TEXT
+sub worklog {
+    my ($number, $text) = @_;
+    error_usage ('no ticket number') unless $number;
+    
+    $LOGGER->info ("Adding worklog information to ticket $number");
+    my @tickets = $REMEDY->get ($number);
+    $LOGGER->logdie ("no matching tickets: '$number'") unless scalar @tickets;
     
     foreach my $tkt (@tickets) { 
         my $worklog = $tkt->worklog_create ();
@@ -319,32 +374,16 @@ if      ($query eq 'ticket') {
         $worklog->time_spent  ($TIME) if defined $TIME; 
 
         if (my $error = $worklog->save) {
-            $logger->error ("error saving worklog entry: $error");
+            $LOGGER->error ("error saving worklog entry: $error");
+            exit 1;
         } else {
             print "Worklog entry " . $worklog->id . " saved\n";        
             print scalar $worklog->print;
             exit 0;
         }
     }
-
-} elsif (lc $query eq 'help') {
-    pod2usage (-verbose => 2, -exit_status => 0, -noperldoc => 1);
-
-} else { error_usage ("invalid query type: '$query'") }
-
-exit 0;
-
-##############################################################################
-### Subroutines ##############################################################
-##############################################################################
-
-### error_usage (ERROR)
-# Exit out with pod2usage
-sub error_usage { 
-    my ($error) = @_;
-    my $logger = Remedy::Log->get_logger ();
-    $logger->error ($error);
-    pod2usage (-exit_status => 2, -verbose => 1);
+    
+    return;
 }
 
 ##############################################################################
@@ -561,6 +600,10 @@ Adds a worklog entry with the text I<TEXT> to the ticket I<NUMBER>.
 Adds I<MINUTES> minutes to the time spent on I<NUMBER>.
 
 =back
+
+=head1 TODO
+
+Re-jiggle the documentation a bit to take advantage of the new function system.
 
 =head1 REQUIREMENTS
 
