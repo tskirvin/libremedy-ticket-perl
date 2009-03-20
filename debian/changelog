@@ -1,10 +1,11 @@
-libremedy-ticket-perl (0.3) UNRELEASED; urgency=low
+libremedy-ticket-perl (0.3ubuntu1) UNRELEASED; urgency=low
 
   * set_status now requires a reason in most cases
   * 'pending' type in remedy-ticket
   * remedy-ticket documentation re-write to make it easier to manage
+  * added 'close' and 'punt' aliases in remedy-ticket, plus fixed 'unassign'
 
- -- Tim Skirvin <tskirvin@stanford.edu>  Tue, 17 Mar 2009 12:10:28 -0700
+ -- Tim Skirvin <tskirvin@stanford.edu>  Fri, 20 Mar 2009 11:50:49 -0700
 
 libremedy-ticket-perl (0.2) intrepid UNRELEASED; urgency=low
 

@@ -111,14 +111,17 @@ our %QUERY = (
     'assign'        => \&assign,
     'assigned'      => \&assign,
     'assignee'      => \&assign,
+    'close'         => \&resolve,
     'help'          => \&help,
     'list'          => \&list,
     'pending'       => \&pending,
+    'punt'          => \&unassign,
     'resolve'       => \&resolve,
     'status'        => \&status,
     'set_status'    => \&set_status,
     'ticket'        => \&ticket,
     'time_spent'    => \&time_spent,
+    'unassign'      => \&unassign,
     'worklog'       => \&worklog,
 );
 
@@ -176,7 +179,8 @@ if ($query =~ /\d+$/) {
 }
 
 _error_usage ("invalid query type: '$query'") unless my $cmd = $QUERY{$query};
-exit $cmd->(@rest);
+my $exit = $cmd->(@rest);
+if ($exit) { exit $exit } else { exit 0 }
 
 ##############################################################################
 ### Subroutines ##############################################################
