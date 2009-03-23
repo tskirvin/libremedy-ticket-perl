@@ -1,3 +1,9 @@
+libremedy-ticket-perl (0.5) lenny; urgency=low
+
+  * actual new remedy-ticket code
+
+ -- Tim Skirvin <tskirvin@stanford.edu>  Mon, 23 Mar 2009 16:13:10 -0700
+
 libremedy-ticket-perl (0.4) lenny; urgency=low
 
   * lots of work to remedy-ticket to make it modular and useful
