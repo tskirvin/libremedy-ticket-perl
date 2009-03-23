@@ -3,11 +3,11 @@ Section: perl
 Priority: extra
 Maintainer: Tim Skirvin <tskirvin@stanford.edu>
 Build-Depends: debhelper (>= 4)
-Build-Depends-Indep: libremedy-perl, rsync, perl
+Build-Depends-Indep: libremedy-perl (>= 0.4), rsync, perl
 Standards-Version: 3.7.2
 
 Package: libremedy-ticket-perl
 Architecture: all
-Depends: perl, libremedy-perl
+Depends: perl, libremedy-perl (>= 0.4)
 Description: Stanford Remedy Ticket Tools for the Unix Team
  Scripts for the Unix Team to work with the Remedy ticketing system.
