@@ -9,7 +9,7 @@ remedy-ticket - manage remedy tickets
 
 B<remedy-ticket> ticket I<NUMBER>
 
-B<remedy-ticket> assignee I<NUMBER> (--user I<USER>|--group I<GROUP>)
+B<remedy-ticket> assign I<NUMBER> (--user I<USER>|--group I<GROUP>)
 
 B<remedy-ticket> list I<TYPE> I<ARGS>
 
@@ -109,8 +109,6 @@ our %DEFAULT = (
 ## maintainability.
 our %QUERY = (
     'assign'        => \&assign,
-    'assigned'      => \&assign,
-    'assignee'      => \&assign,
     'close'         => \&resolve,
     'help'          => \&help,
     'list'          => \&list,
@@ -241,7 +239,7 @@ sub ticket {
     return;
 }
 
-=item B<remedy-ticket> assignee I<NUMBER> (--user I<USER>|--group I<GROUP>)
+=item B<remedy-ticket> assign I<NUMBER> (--user I<USER>|--group I<GROUP>)
 
 Assigns ticket I<NUMBER> to a group and/or user (at least one of which must be
 offered).  If I<USER> is offered but is blank, then we will clear the current
@@ -338,7 +336,7 @@ or the user invoking the script.
 
 =cut
 
-    } elsif ($type eq 'assign') {
+    } elsif ($type =~ /^assign/) {
         $hash{'assigned_user'} = $user;
         push @text, "assigned to '$user'";
         $user = '';

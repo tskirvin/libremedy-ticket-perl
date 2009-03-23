@@ -1,4 +1,11 @@
-libremedy-ticket-perl (0.3ubuntu1) UNRELEASED; urgency=low
+libremedy-ticket-perl (0.4) lenny; urgency=low
+
+  * lots of work to remedy-ticket to make it modular and useful
+  * releasing
+
+ -- Tim Skirvin <tskirvin@stanford.edu>  Mon, 23 Mar 2009 15:26:22 -0700
+
+libremedy-ticket-perl (0.3) UNRELEASED; urgency=low
 
   * set_status now requires a reason in most cases
   * 'pending' type in remedy-ticket
