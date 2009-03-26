@@ -1,3 +1,9 @@
+libremedy-ticket-perl (0.6) lenny; urgency=low
+
+  * should be able to actually assign to a group.
+
+ -- Tim Skirvin <tskirvin@stanford.edu>  Thu, 26 Mar 2009 12:30:46 -0700
+
 libremedy-ticket-perl (0.5) lenny; urgency=low
 
   * actual new remedy-ticket code
