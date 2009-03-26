@@ -175,6 +175,8 @@ sub assign  {
         $logger->debug ("no assigned person");
         $toset{'Assignee Login ID'} = undef;
         $toset{'Assignee'}          = undef;
+        $toset{'Assigned Group'}    = $sg->name;
+        $toset{'Assigned Group ID'} = $sg->id;
     }
 
     $self->set (%toset);
