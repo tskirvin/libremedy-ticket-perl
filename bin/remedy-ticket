@@ -158,7 +158,7 @@ my $result = $parser->getoptions (
     'time=s'        => \$TIME,
     'user=s'        => \$USER,
     'man'           => sub { pod2usage (-verbose => 2, -noperldoc => 1) },
-    'h|help'        => sub { pod2usage (-verbose => 1) }) || _error_usage ();
+    'h|help'        => sub { pod2usage (-verbose => 1) }) || error_usage ();
 
 our $REMEDY = eval { Remedy::Ticket->connect ('debug' => $DEBUG) }
     or $LOGGER->logdie ("couldn't connect to database: $@");
@@ -166,15 +166,15 @@ $LOGGER->logdie ($@) if $@;
 
 my ($query, @rest) = @ARGV;
 $query ||= '(none)';
-$query = lc $query;
 
 # if we just get a ticket number as the query, display it with ticket ()
 if ($query =~ /\d+$/) {
     unshift @rest, $query;
     $query = 'ticket';
 }
+$query = lc $query;
 
-_error_usage ("invalid query type: '$query'") unless my $cmd = $QUERY{$query};
+error_usage ("invalid query type: '$query'") unless my $cmd = $QUERY{$query};
 my $exit = $cmd->(@rest);
 if ($exit) { exit $exit } else { exit 0 }
 
@@ -230,7 +230,7 @@ Uses B<Remedy::Ticket::text ()>.
 
 sub ticket {
     my ($number, $type) = @_;
-    _error_usage ('no ticket number') unless $number;
+    error_usage ('no ticket number') unless $number;
     $type ||= $DEFAULT{'ticket'};
     $LOGGER->info (sprintf ("text (%s, %s)", $number, $type || '(default)'));
     print scalar $REMEDY->text ($number, $type);
@@ -249,7 +249,7 @@ Uses B<Remedy::Ticket::assign ()>.
 
 sub assign {
     my ($number) = @rest;
-    _error_usage ('no ticket number') unless $number;
+    error_usage ('no ticket number') unless $number;
 
     my (%args, @text);
 
@@ -266,7 +266,7 @@ sub assign {
         $args{'group'} = $GROUP;
         push @text, "group $GROUP";
     }
-    _error_usage ('no assignee information') unless scalar @text;
+    error_usage ('no assignee information') unless scalar @text;
     my $text = join (', ', @text);;
 
     $LOGGER->info ("assigning $number to $text");
@@ -365,21 +365,15 @@ or the user invoking the script.
         $USER = '';
         push @text, "submitted by '$user'";
 
-=item unassigned (--user I<USER>)
+=item unassigned
 
-Only show unassigned tickets.  If I<USER> is offered, then we will also only
-show tickets submitted by that user.
+Only show unassigned tickets.  
 
 =cut
 
     } elsif ($type eq 'unassigned') {
         $hash{'unassigned'}++;
         push @text, "unassigned tickets";
-
-        if ($USER) {
-            $hash{'submitted_user'} = $USER;
-            push @text, "submitted by '$USER'";
-        }
 
 =item unresolved
 
@@ -392,7 +386,7 @@ Only show open tickets.
         push @text, "open tickets";
 
 
-    } else { _error_usage ("invalid list type: '$type'") }
+    } else { error_usage ("invalid list type: '$type'") }
 
 =back
 
@@ -486,8 +480,8 @@ Uses B<Remedy::Ticket::set_status ()>.
 
 sub pending {
     my ($number, $reason) = @_;
-    _error_usage ('no ticket number') unless $number;
-    _error_usage ('no reason offered') unless $reason;
+    error_usage ('no ticket number') unless $number;
+    error_usage ('no reason offered') unless $reason;
 
     my %extra = ('user'      => $USER || $DEFAULT_USER);
     $LOGGER->info ("setting '$number' to pending, with reason '$reason'");
@@ -514,8 +508,8 @@ Uses B<Remedy::Ticket::resolve ()>.
 
 sub resolve {
     my ($number, $text) = @_;
-    _error_usage ('no ticket number') unless $number;
-    _error_usage ('no text offered for resolution') unless $text;
+    error_usage ('no ticket number') unless $number;
+    error_usage ('no text offered for resolution') unless $text;
 
 
     my %extra = ('timespent' => $TIME,
@@ -544,8 +538,8 @@ Uses B<Remedy::Ticket::status ()>.
 
 sub status {
     my ($number, $status, $reason) = @_;
-    _error_usage ('no ticket number')  unless $number;
-    _error_usage ('no status offered') unless $status;
+    error_usage ('no ticket number')  unless $number;
+    error_usage ('no status offered') unless $status;
 
     my %extra = ('user' => $USER || $DEFAULT_USER);
 
@@ -575,8 +569,8 @@ Adds I<MINUTES> minutes to the time spent on I<NUMBER>.
 
 sub time_spent {
     my ($number, $mins) = @_;
-    _error_usage ('no ticket number') unless $number;
-    _error_usage ('must set at least 1 minute') unless $mins;
+    error_usage ('no ticket number') unless $number;
+    error_usage ('must set at least 1 minute') unless $mins;
 
     $LOGGER->info ("adding $mins minutes to $number");
     if (my $return = $REMEDY->time_add ($number, $mins)) {
@@ -601,7 +595,7 @@ Uses B<Remedy::Ticket::unassign ()>.
 
 sub unassign {
     my ($number) = @_;
-    _error_usage ('no ticket number') unless $number;
+    error_usage ('no ticket number') unless $number;
 
     if (my $return = $REMEDY->unassign ($number)) {
         $LOGGER->warn ("failed to unassign $number: $return");
@@ -621,7 +615,7 @@ Adds a worklog entry with the text I<TEXT> to the ticket I<NUMBER>.
 
 sub worklog {
     my ($number, $text) = @_;
-    _error_usage ('no ticket number') unless $number;
+    error_usage ('no ticket number') unless $number;
 
     $LOGGER->info ("Adding worklog information to ticket $number");
     my @tickets = $REMEDY->get ($number);
@@ -657,9 +651,9 @@ sub worklog {
 ### Internal Subroutines #####################################################
 ##############################################################################
 
-### _error_usage (ERROR)
+### error_usage (ERROR)
 # Exit out with pod2usage.
-sub _error_usage {
+sub error_usage {
     my ($error) = @_;
     $LOGGER->error ($error);
     pod2usage (-exit_status => 2, -verbose => 1);

@@ -1,3 +1,9 @@
+libremedy-ticket-perl (0.7) UNRELEASED; urgency=low
+
+  * more fixes to group assignment
+
+ -- Tim Skirvin <tskirvin@stanford.edu>  Thu, 30 Apr 2009 15:01:13 -0700
+
 libremedy-ticket-perl (0.6) lenny; urgency=low
 
   * should be able to actually assign to a group.

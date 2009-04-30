@@ -117,15 +117,15 @@ associated with the support group and the user.
 
 =item Assigned Group Uses OLA
 
-=item Owner Group
-
-=item Owner Group ID
+=item Assigned Support Organization
 
 =item Shifts Flag
 
 =item z1D Assigned Group Role
 
 =item z1D Assigned Group Uses SLA
+
+=item Onwer Group Uses SLA
 
 All of these come from the Support Group (B<Remedy::Form::SupportGroup>) form.
 
@@ -151,22 +151,24 @@ sub assign  {
     return "no matching support group for '$group'" unless $sg;
 
     ## Populate the initial fields that Business Logic Requires.
-    $toset{'Owner Group'}                 = $sg->name;
-    $toset{'Owner Group ID'}              = $sg->id;
-    $toset{'z1D Assigned Group Uses SLA'} = $sg->get ('Uses SLA');
-    $toset{'Assigned Group Uses OLA'}     = $sg->get ('Uses OLA');
-    $toset{'z1D Assigned Group Role'}     = $sg->get ('Support Group Role');
-    $toset{'Shifts Flag'}                 = $sg->get ('Shifts Flag');
+    $toset{'Assigned Group'}              = $sg->name;
+    $toset{'Assigned Group ID'}           = $sg->id;
+
+    ## These are a bit weird, but they're necessary
+    $toset{'Assigned Support Organization'} = $sg->get ('Support Organization');
+    $toset{'Assigned Group Uses OLA'}       = $sg->get ('Uses OLA');
+    $toset{'Onwer Group Uses SLA'}          = $sg->get ('Uses SLA');
+    $toset{'Shifts Flag'}                   = $sg->get ('Shifts Flag');
+    $toset{'z1D Assigned Group Role'}       = $sg->get ('Support Group Role');
+    $toset{'z1D Assigned Group Uses SLA'}   = $sg->get ('Uses SLA');
 
     my $user  = $args{'user'};
-    if ($user) { 
+    if (defined $user) { 
         $logger->debug ("confirming '$user' is in group '$group'");
         my %search = ('Support Group ID' => $sg->id, 'Login ID' => $user);
         if (my $sga = $self->read ('sga', %search)) {
             $toset{'Assignee'}          = $sga->get ('Full Name');
             $toset{'Assignee Login ID'} = $sga->get ('Login ID');
-            $toset{'Assigned Group'}    = $sg->name;
-            $toset{'Assigned Group ID'} = $sg->id;
         } else { 
             $logger->warn ("user '$user' is not in group '$group'");
             return "user '$user' is not in group '$group'";
@@ -175,8 +177,6 @@ sub assign  {
         $logger->debug ("no assigned person");
         $toset{'Assignee Login ID'} = undef;
         $toset{'Assignee'}          = undef;
-        $toset{'Assigned Group'}    = $sg->name;
-        $toset{'Assigned Group ID'} = $sg->id;
     }
 
     $self->set (%toset);
@@ -844,7 +844,7 @@ sub limit_pre {
 
     $args{'Assigned Support Company'}      ||= $config->company   || "%";
     $args{'Assigned Support Organization'} ||= $config->sub_org   || "%";
-    $args{'Owner Group'}                   ||= $config->workgroup || "%";
+    $args{'Assigned Group'}                ||= $config->workgroup || "%";
 
     my %fields = $self->fields (%args);
 
