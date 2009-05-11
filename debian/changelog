@@ -1,6 +1,8 @@
 libremedy-ticket-perl (0.7) UNRELEASED; urgency=low
 
   * more fixes to group assignment
+  * 'remedy-ticket pending' now offers the list of possible values even 
+    if none is offered
 
  -- Tim Skirvin <tskirvin@stanford.edu>  Thu, 30 Apr 2009 15:01:13 -0700
 

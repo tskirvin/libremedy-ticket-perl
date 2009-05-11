@@ -82,7 +82,7 @@ For searches, what username are we searching for?
 ## Modify and uncomment this to use user code instead of just system-wide
 ## modules, or to use development versions.
 # use lib '/FULL/PATH/TO/PERL/MODULES';
-# use lib "/afs/ir/users/t/s/tskirvin/work/remedy/libremedy-ticket-perl/lib";
+use lib "/afs/ir/users/t/s/tskirvin/work/remedy/libremedy-ticket-perl/lib";
 
 ## Number of days to go back for the 'unresolved' search.  0 means no limit.
 our $DAYS = 0;
@@ -280,6 +280,15 @@ sub assign {
     }
 }
 
+=item B<remedy-ticket> help
+
+Prints off the short documentation.
+
+=cut
+
+sub help { pod2usage (-verbose => 1) }
+
+
 =item B<remedy-ticket> list I<TYPE> (I<USER> I<ARGS>)
 
 Lists a short (3 lines or so) summary of each ticket matching the search time
@@ -468,11 +477,19 @@ works if I<GROUP>, is not offered, as listed above.
     exit 0;
 }
 
+=item B<remedy-ticket> man
+
+Prints off the long documentation.
+
+=cut
+
+sub help { pod2usage (-verbose => 2) }
 
 =item B<remedy-ticket> pending I<NUMBER> I<REASON>
 
 Sets the ticket I<NUMBER> to status 'Pending', with reason I<REASON>.  The list
-of valid reasons is offered if an invalid one is chosen.
+of valid reasons is offered if an invalid one is chosen (and if one is not
+offered, then we'll set it to '(none offered)' to ensure that we get the list).
 
 Uses B<Remedy::Ticket::set_status ()>.
 
@@ -481,7 +498,7 @@ Uses B<Remedy::Ticket::set_status ()>.
 sub pending {
     my ($number, $reason) = @_;
     error_usage ('no ticket number') unless $number;
-    error_usage ('no reason offered') unless $reason;
+    $reason ||= '(none offered)';
 
     my %extra = ('user'      => $USER || $DEFAULT_USER);
     $LOGGER->info ("setting '$number' to pending, with reason '$reason'");
@@ -510,7 +527,6 @@ sub resolve {
     my ($number, $text) = @_;
     error_usage ('no ticket number') unless $number;
     error_usage ('no text offered for resolution') unless $text;
-
 
     my %extra = ('timespent' => $TIME,
                  'user'      => $USER || $DEFAULT_USER);

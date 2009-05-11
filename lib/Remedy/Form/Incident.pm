@@ -163,7 +163,11 @@ sub assign  {
     $toset{'z1D Assigned Group Uses SLA'}   = $sg->get ('Uses SLA');
 
     my $user  = $args{'user'};
-    if (defined $user) { 
+    if (! defined $user) { 
+        $logger->debug ("no assigned person");
+        $toset{'Assignee Login ID'} = undef;
+        $toset{'Assignee'}          = undef;
+    } else {
         $logger->debug ("confirming '$user' is in group '$group'");
         my %search = ('Support Group ID' => $sg->id, 'Login ID' => $user);
         if (my $sga = $self->read ('sga', %search)) {
@@ -173,10 +177,6 @@ sub assign  {
             $logger->warn ("user '$user' is not in group '$group'");
             return "user '$user' is not in group '$group'";
         } 
-    } else {
-        $logger->debug ("no assigned person");
-        $toset{'Assignee Login ID'} = undef;
-        $toset{'Assignee'}          = undef;
     }
 
     $self->set (%toset);
