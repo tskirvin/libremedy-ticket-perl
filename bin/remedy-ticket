@@ -110,6 +110,8 @@ our %QUERY = (
     'close'         => \&resolve,
     'help'          => \&help,
     'list'          => \&list,
+    'man'           => \&man,
+    'manual'        => \&man,
     'pending'       => \&pending,
     'punt'          => \&unassign,
     'resolve'       => \&resolve,
@@ -483,7 +485,7 @@ Prints off the long documentation.
 
 =cut
 
-sub help { pod2usage (-verbose => 2) }
+sub man { pod2usage (-verbose => 2) }
 
 =item B<remedy-ticket> pending I<NUMBER> I<REASON>
 

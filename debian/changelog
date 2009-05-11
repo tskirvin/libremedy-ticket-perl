@@ -1,8 +1,14 @@
-libremedy-ticket-perl (0.7) UNRELEASED; urgency=low
+libremedy-ticket-perl (0.8) lenny; urgency=low
 
-  * more fixes to group assignment
   * 'remedy-ticket pending' now offers the list of possible values even 
     if none is offered
+  * added 'man' and 'help' options
+
+ -- Tim Skirvin <tskirvin@stanford.edu>  Mon, 11 May 2009 10:46:20 -0700
+
+libremedy-ticket-perl (0.7) lenny; urgency=low
+
+  * more fixes to group assignment
 
  -- Tim Skirvin <tskirvin@stanford.edu>  Thu, 30 Apr 2009 15:01:13 -0700
 
