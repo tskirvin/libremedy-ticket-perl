@@ -263,6 +263,18 @@ sub set_status {
     return $self->set (%args);
 }
 
+=item set_type (TYPE)
+
+Not yet implemented.
+
+=cut
+
+sub set_type {
+    my ($self, $type, %args) = @_;
+    return 'no type offered' unless $type;
+    return $self->set ('Incident Type' => $type);
+}
+
 =item time_add (TIME [, USER])
 
 Updates the 'Time Spent' fields.  Depends on some Stanford-specific business
@@ -547,7 +559,7 @@ sub text_short {
     my $assign  = $self->assignee_netid || "(none)";
     my $group   = $self->assignee_group || "(none)";
     my $summary = $self->summary || "";
-    map { s/\s+$// } $summary, $group, $assign, $request;
+    map { s/(\s+|\n.*)$//mg } $summary, $group, $assign, $request;
 
     my $update = $self->date_modified;
     my $create = $self->date_submit;
